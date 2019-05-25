@@ -1,0 +1,277 @@
+#lang racket
+
+(provide (all-defined-out))
+
+(struct ? (x) #:transparent)
+(struct ¬ (p) #:transparent)
+
+(define ?a (? 'a))
+(define ?b (? 'b))
+(define ?c (? 'c))
+(define ?d (? 'd))
+(define ?e (? 'e))
+(define ?f (? 'f))
+(define ?g (? 'g))
+(define ?h (? 'h))
+(define ?i (? 'i))
+(define ?j (? 'j))
+(define ?k (? 'k))
+(define ?l (? 'l))
+(define ?m (? 'm))
+(define ?n (? 'n))
+(define ?o (? 'o))
+(define ?p (? 'p))
+(define ?q (? 'q))
+(define ?r (? 'r))
+(define ?s (? 's))
+(define ?t (? 't))
+(define ?u (? 'u))
+(define ?v (? 'v))
+(define ?w (? 'w))
+(define ?x (? 'x))
+(define ?y (? 'y))
+(define ?z (? 'z))
+
+(define (atom-name a)
+  (vector-ref a 0))
+
+(define (atom-arity a)
+  (sub1 (vector-length a)))
+
+(define (atom-term a i)
+  (vector-ref a (add1 i)))
+
+(struct ledge (to label) #:transparent)
+
+(define (lsuccessors G n)
+  (for/fold ((R (set))) ((s (in-set (hash-ref G n (set)))))
+    (set-add R (ledge-to s))))
+
+(define (ltranspose G)
+  (for/fold ((G* (hash))) (((from tos) (in-hash G)))
+    (for/fold ((G* (hash-set G* from (hash-ref G* from (set))))) ((to (in-set tos)))
+      (match-let (((ledge v label) to))
+        (hash-set G* v (set-add (hash-ref G* v (set)) (ledge from label)))))))
+
+(define (sinks G)
+  (for/set (((from tos) (in-hash G)) #:when (set-empty? tos))
+    from))
+
+(define (precedence-lgraph P)
+  (for/fold ((G (hash))) ((r (in-set P)))
+    (let ((head (atom-name (car r))))
+      (for/fold ((G (hash-set G head (hash-ref G head (set))))) ((p (in-list (cdr r))))
+        (match p
+          ((¬ n)
+            (let ((dep (atom-name n)))
+              (hash-set G dep (set-add (hash-ref G dep (set)) (ledge head ¬)))))
+          (_
+            (let ((dep (atom-name p)))
+              (hash-set G dep (set-add (hash-ref G dep (set)) (ledge head +)))))
+        )))))
+
+; Tarjan
+(define (lscc G)
+
+  (define index 0)
+  (define S '())
+  (define Index (hash))
+  (define Lowlink (hash))
+  (define Onstack (hash))
+  (define SCC (set))
+
+  (define (strongconnect v)
+    (set! Index (hash-set Index v index))
+    (set! Lowlink (hash-set Lowlink v index))
+    (set! index (add1 index))
+    (set! S (cons v S))
+    (set! Onstack (hash-set Onstack v #t))
+
+    (for ((w (in-set (lsuccessors G v))))
+      (if (not (hash-ref Index w #f))
+          (begin
+            (strongconnect w)
+            (set! Lowlink (hash-set Lowlink v (min (hash-ref Lowlink v) (hash-ref Lowlink w)))))
+          (when (hash-ref Onstack w)
+              (set! Lowlink (hash-set Lowlink v (min (hash-ref Lowlink v) (hash-ref Index w)))))))
+
+    (when (= (hash-ref Lowlink v) (hash-ref Index v))
+      (letrec ((f (lambda (scc)
+                    (let ((w (car S)))
+                      (set! S (cdr S))
+                      (set! Onstack (hash-set Onstack w #f))
+                      ;(printf "~v ~v\n" (hash-ref Index v) w)
+                      (set! scc (cons w scc))
+                      (if (not (equal? w v))
+                          (f scc)
+                          (set! SCC (set-add SCC scc)))))))
+        (f '()))))
+
+  (for ((v (in-list (hash-keys G))))
+    (let ((index (hash-ref Index v #f)))
+      (unless index (strongconnect v))))
+
+  SCC)
+
+(define (scc-map SCC) ; TODO this can be folded into SCC 
+  (let loop ((index 0) (SCC SCC) (R (hash)))
+    (if (set-empty? SCC)
+        R
+        (let ((C (set-first SCC)))
+          (let ((R*
+              (for/fold ((R R)) ((v (in-list C)))
+                (hash-set R v index))))
+            (loop (add1 index) (set-rest SCC) R*))))))
+
+
+(define (topo-sort G)
+
+  (define V (set))
+  (define R '())
+
+  (define (dfs v)
+    (set! V (set-add V v))
+    (for ((s (in-set (hash-ref G v))))
+      (unless (set-member? V s)
+        (dfs s)))
+    (set! R (cons v R)))
+
+  (for ((v (in-list (hash-keys G))))
+      (unless (set-member? V v)
+        (dfs v)))
+
+  R)
+
+
+(define (strata P)
+
+  (define G-pred (precedence-lgraph P))
+  (define SCC (lscc G-pred))
+  (define v2cid (scc-map SCC))
+
+  (define G-red
+    (for/fold ((R (hash))) (((from edges) (in-hash G-pred)))
+      (let ((from-cid (hash-ref v2cid from)))
+        (for/fold ((R (hash-set R from-cid (hash-ref R from-cid (set))))) ((edge (in-set edges)))
+          (hash-set R from-cid (set-add (hash-ref R from-cid) (hash-ref v2cid (ledge-to edge))))))))
+
+  (define cid-sorted (topo-sort G-red))
+  (printf "topo: ~v\n" cid-sorted)
+
+  (define cid2C (for/fold ((R (hash))) (((v cid) (in-hash v2cid)))
+                        (hash-set R cid (set-add (hash-ref R cid (set)) v))))
+  (printf "cid2C: ~v\n" cid2C)
+
+  ; (define Strata (for/fold ((R (hash))) ((cid (in-list cid-sorted)))
+  ;                   (for/fold ((R R)) ((v (in-set (hash-ref cid2C cid))))
+  ;                     (hash-set R v cid))))
+
+  (define Strata (map (lambda (cid) (hash-ref cid2C cid)) cid-sorted))
+
+  Strata)
+
+(define (stratify P)
+  (define S (strata P))
+  (printf "strata: ~v\n" S)
+
+  (map (lambda (Preds)
+          (for/fold ((R (set))) ((Pred (in-set Preds)))
+            (set-union R (for/set ((r (in-set P)) #:when (eq? (atom-name (car r)) Pred))
+                            r))))
+        S))
+
+
+(define (solve-naive P E)
+
+  (define S* (stratify P))
+  (printf "stratify ~v\n\n" S*)
+
+  (let inter-loop ((E E) (S S*))
+    (printf "\ninter ~a/~a with ~a facts\n" (- (set-count S*) (set-count S)) (set-count S*) (set-count E))
+    (if (null? S)
+        E
+        (let ((Pi (car S)))
+          (printf "Pi: ~v\n" (list->set (set-map Pi (lambda (r) (atom-name (car r))))))
+          (let intra-loop ((E-intra E))
+            (let rules-iter ((rules Pi) (E* E-intra))
+              (if (set-empty? rules)
+                  (if (equal? E* E-intra)
+                        (let ((new-facts (set-subtract E* E-intra)))
+                          (printf "done new facts: ~a\n" new-facts)
+                          (inter-loop E* (cdr S)))
+                        (let ((new-facts (set-subtract E* E-intra)))
+                          (printf "cont new facts: ~a\n" new-facts)
+                          (intra-loop E*)))
+                  (let ((rule (set-first rules)))
+                    (let ((ΔE (fire rule E*)))
+                      (rules-iter (set-rest rules) (set-union E* ΔE)))))))))))
+
+(define (fire rule E)
+  ;(printf "fire rule ~v E ~v\n" rule E)
+  (let loop ((W (set (cons (cdr rule) (hash)))) (ΔE (set)))
+    ;(printf "loop ~v\n" W)\;
+    (if (set-empty? W)
+        ΔE
+        (match-let (((cons atoms env) (set-first W)))
+        ;(printf "looking at atoms ~v in ~v\n" atoms env)
+        (if (null? atoms)
+            (let ((hv (car rule)))
+              (let ((terms 
+                  (for/list ((i (in-range (atom-arity hv))))
+                    (let ((x (atom-term hv i)))
+                      (hash-ref env x)))))
+                (let ((new-fact (apply vector-immutable (cons (atom-name hv) terms))))
+                  (loop (set-rest W) (set-add ΔE new-fact)))))
+            (let ((av (car atoms)))
+              (match av
+                ((¬ av)
+                  (let e-loop ((E E))
+                    (if (set-empty? E)
+                        (loop (set-add (set-rest W) (cons (cdr atoms) env)) ΔE)
+                        (let ((ev (set-first E)))
+                          (let ((m (matchare av ev env)))
+                            ;(printf "¬ matchare result: ~v\n" m)
+                            (if m
+                                (loop (set-rest W) ΔE)
+                                (e-loop (set-rest E))))))))                      
+                (_
+                  (let e-loop ((E E) (W (set-rest W)))
+                    (if (set-empty? E)
+                        (loop W ΔE)
+                        (let ((ev (set-first E)))
+                          (let ((m (matchare av ev env)))
+                            ;(printf "matchare result: ~v\n" m)
+                            (if m
+                                (e-loop (set-rest E) (set-add W (cons (cdr atoms) m)))
+                                (e-loop (set-rest E) W))))))))))))))
+
+(define (matchare av ev ρ)
+  ;(printf "matchare ~v ~v ~v\n" av ev ρ)
+  (if (= (atom-arity av) (atom-arity ev))
+      (let loop ((i 0) (ρ ρ))
+        (if (= i (vector-length av))
+            ρ
+            (match* ((vector-ref av i) (vector-ref ev i))
+              ((x x) (loop (add1 i) ρ))
+              ((x y)
+                ;(printf "x ~a y ~a\n" x y)
+                (if (hash-has-key? ρ x)
+                  (let ((existing-value (hash-ref ρ x)))
+                    (if (equal? existing-value y)
+                        (loop (add1 i) ρ)
+                        #f))
+                  (loop (add1 i) (hash-set ρ x y))))
+              ;((x y) (printf "no match ~a *-* ~a\n" x y) #f)
+            )))
+      #f))
+
+
+
+
+
+
+
+
+(module+ main
+  123
+)
