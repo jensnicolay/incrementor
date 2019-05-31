@@ -2,6 +2,8 @@
 
 (provide (all-defined-out))
 
+; terminology: http://www.cse.unsw.edu.au/~cs9416/06s1/prolog/datalog.pdf
+
 (struct ¬ (p) #:transparent)
 
 (define (atom-name a)
@@ -12,6 +14,15 @@
 
 (define (atom-term a i)
   (vector-ref a (add1 i)))
+
+(define (--> head . body)
+  (cons head body))
+  
+(define (rule-head r)
+  (car r))
+
+(define (rule-terms r)
+  (cdr r))
 
 (struct ledge (to label) #:transparent)
 
@@ -168,15 +179,23 @@
             (let rules-iter ((rules Pi) (E* E-intra))
               (if (set-empty? rules)
                   (if (equal? E* E-intra)
+                        (inter-loop E* (cdr S))
                         (let ((new-facts (set-subtract E* E-intra)))
-                          (printf "done new facts: ~a\n" new-facts)
-                          (inter-loop E* (cdr S)))
-                        (let ((new-facts (set-subtract E* E-intra)))
-                          (printf "cont new facts: ~a\n" new-facts)
+                          (printf "new facts: ~a\n" new-facts)
                           (intra-loop E*)))
                   (let ((rule (set-first rules)))
                     (let ((ΔE (fire rule E*)))
                       (rules-iter (set-rest rules) (set-union E* ΔE)))))))))))
+
+(define (bind-fact hv env)                     
+  (let ((terms 
+    (for/list ((i (in-range (atom-arity hv))))
+      (let ((x (atom-term hv i)))
+        (if (vector? x)
+          (bind-fact x env)
+          (hash-ref env x (lambda () (error 'bind-fact "no value for ~a (env: ~a)" x env))))))))
+  (let ((new-fact (apply vector-immutable (cons (atom-name hv) terms))))
+    new-fact)))
 
 (define (fire rule E)
   ;(printf "fire rule ~v E ~v\n" rule E)
@@ -188,12 +207,8 @@
         ;(printf "looking at atoms ~v in ~v\n" atoms env)
         (if (null? atoms)
             (let ((hv (car rule)))
-              (let ((terms 
-                  (for/list ((i (in-range (atom-arity hv))))
-                    (let ((x (atom-term hv i)))
-                      (hash-ref env x)))))
-                (let ((new-fact (apply vector-immutable (cons (atom-name hv) terms))))
-                  (loop (set-rest W) (set-add ΔE new-fact)))))
+              (let ((new-fact (bind-fact hv env)))
+                (loop (set-rest W) (set-add ΔE new-fact))))
             (let ((av (car atoms)))
               (match av
                 ((¬ av)
@@ -219,12 +234,13 @@
 
 (define (matchare av ev ρ)
   ;(printf "matchare ~v ~v ~v\n" av ev ρ)
-  (if (= (atom-arity av) (atom-arity ev))
-      (let loop ((i 0) (ρ ρ))
+  (if (and (eq? (vector-ref av 0) (vector-ref ev 0)) (= (atom-arity av) (atom-arity ev)))
+      (let loop ((i 1) (ρ ρ))
         (if (= i (vector-length av))
             ρ
             (match* ((vector-ref av i) (vector-ref ev i))
               ((x x) (loop (add1 i) ρ))
+              (('_ _) (loop (add1 i) ρ))
               ((x y)
                 ;(printf "x ~a y ~a\n" x y)
                 (if (hash-has-key? ρ x)
@@ -233,7 +249,6 @@
                         (loop (add1 i) ρ)
                         #f))
                   (loop (add1 i) (hash-set ρ x y))))
-              ;((x y) (printf "no match ~a *-* ~a\n" x y) #f)
             )))
       #f))
 
