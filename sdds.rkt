@@ -18,7 +18,7 @@
           ((«let» l x e0 e1)
             (loop (set-union (set-rest W) (set x e0 e1)) (set-add E `#(Let ,l ,(ast-label x) ,(ast-label e0) ,(ast-label e1)))))
           ((«letrec» l x e0 e1)
-            (loop (set-union (set-rest W) (set x e0 e1)) (set-add E `#(Letrec ,l (ast-label x) ,(ast-label e0) ,(ast-label e1)))))
+            (loop (set-union (set-rest W) (set x e0 e1)) (set-add E `#(Letrec ,l ,(ast-label x) ,(ast-label e0) ,(ast-label e1)))))
           ((«if» l ae e1 e2)
             (loop (set-union (set-rest W) (set ae e1 e2)) (set-add E `#(If ,l ,(ast-label ae) ,(ast-label e1) ,(ast-label e2)))))
           ; ((«car» _ x) (set x))
@@ -31,41 +31,124 @@
           ; ((«vector-ref» _ x ae) (set x ae))
           ; ((«vector-set!» _ x ae1 ae2) (set x ae1 ae2))
           ; ((«quo» _ _) (set))
-          ((«app» l rator rands)
-            (loop (set-union (set-rest W) (set rator) (list->set rands)) (set-add E `#(App l (map ast-label e-params) (ast-label e-body)))))
+          ((«app» l e-rator e-rands)
+            (loop (set-union (set-rest W) (set e-rator) (list->set e-rands)) (set-add E `#(App ,l ,(ast-label e-rator) ,(map ast-label e-rands)))))
           (_ (error "ast->facts: cannot handle expression" e))))))
 
 (define P (set
 
-  (#(Parent e p) . --> . #(Let p e _ _))
+  (#(Ast e) . --> . #(Lit e _))
+  (#(Ast e) . --> . #(Id e _))
+  (#(Ast e) . --> . #(Lam e _ _))
+  (#(Ast e) . --> . #(Let e _ _ _))
+  (#(Ast e) . --> . #(Letrec e _ _ _))
+  (#(Ast e) . --> . #(If e _ _ _))
+  (#(Ast e) . --> . #(App e _ _))
+
+  (#(Parent e p) . --> . #(Let p e _ _)) ;;
   (#(Parent e p) . --> . #(Let p _ e _))
   (#(Parent e p) . --> . #(Let p _ _ e))
-  (#(Parent e p) . --> . #(Letrec p e _ _))
+  (#(Parent e p) . --> . #(Letrec p e _ _)) ;;
   (#(Parent e p) . --> . #(Letrec p _ e _))
   (#(Parent e p) . --> . #(Letrec p _ _ e))
+  (#(Parent e p) . --> . #(Lam p e-params _) #(∈1 e e-params))
+  (#(Parent e p) . --> . #(Lam p _ e))
+  (#(Parent e p) . --> . #(App p e _))
+  (#(Parent e p) . --> . #(App p _ e-rands) #(∈1 e e-rands))
+  (#(Parent e p) . --> . #(If p e _ _))
+  (#(Parent e p) . --> . #(If p _ e _))
+  (#(Parent e p) . --> . #(If p _ _ e))
 
+  (#(Root e) . --> . #(Ast e) (¬ #(Parent e _)))
+
+  ; (#(Ancestor e p) . --> . #(Parent e p))
+  ; (#(Ancestor e p) . --> . #(Ancestor e p‘) #(Parent p‘ p))
+
+  ; (#(In-supertree e e) . --> . #(Ast e))
+  ; (#(In-supertree e p) . --> . #(Ancestor p e))
+
+  ; (#(Child p e) . --> . #(Parent e p))
+
+  ; (#(Descendant p e) . --> . #(Ancestor e p))
+
+  ; (#(In-subtree e e) . --> . #(Ast e))
+  ; (#(In-subtree p e) . --> . #(Descendant p e))
+  
+  (#(Reachable e 0) . --> . #(Root e))
+  (#(Reachable e‘ κ‘) . --> . #(Reachable e κ) #(Step e κ e‘ κ‘))
+  
+  (#(Step e κ e‘ κ‘) . --> . #(Reachable e κ) #(Lit e _) #(Cont e κ e‘ κ‘))
+  (#(Step e κ e‘ κ‘) . --> . #(Reachable e κ) #(Id e _) #(Cont e κ e‘ κ‘))
+  (#(Step e κ e‘ κ‘) . --> . #(Reachable e κ) #(Lam e _ _) #(Cont e κ e‘ κ‘))
+  (#(Step e κ e-init κ) . --> . #(Reachable e κ) #(Let e _ e-init _))
+  (#(Step e κ e-init κ) . --> . #(Reachable e κ) #(Letrec e _ e-init _))
+  (#(Step e κ e-body #(call e κ)) . --> . #(Reachable e κ) #(App e e-rator _) #(Geval e-rator e κ #(obj e-lam _ _)) #(Lam e-lam _ e-body))
+  (#(Step e κ e‘ κ‘) . --> . #(Reachable e κ) #(App e e-rator _) #(Geval e-rator e κ #(prim _)) #(Cont e κ e‘ κ‘))
+  (#(Step e κ e-then κ) . --> . #(Reachable e κ) #(If e e-cond e-then _) #(Geval e-cond e κ d) (¬ #(= d #f)))
+  (#(Step e κ e-else κ) . --> . #(Reachable e κ) #(If e e-cond _ e-else) #(Geval e-cond e κ #f))
+  
+  (#(Cont e-init κ e-body κ) . --> . #(Reachable e κ) #(Parent e p) #(Let p _ e-init e-body))
+  (#(Cont e-init κ e-body κ) . --> . #(Reachable e κ) #(Parent e p) #(Letrec p _ e-init e-body))
+  (#(Cont e-body κ e‘ κ‘) . --> . #(Reachable e-body κ) #(Parent e-body p) #(Let p _ _ e-body) #(Cont p κ e‘ κ‘))
+  (#(Cont e-body κ e‘ κ‘) . --> . #(Reachable e-body κ) #(Parent e-body p) #(Letrec p _ _ e-body) #(Cont p κ e‘ κ‘))
+  (#(Cont e-then κ e‘ κ‘) . --> . #(Reachable e-then κ) #(Parent e-then p) #(If p _ e-then _) #(Cont p κ e‘ κ‘))
+  (#(Cont e-else κ e‘ κ‘) . --> . #(Reachable e-then κ) #(Parent e-then p) #(If p _ _ e-else) #(Cont p κ e‘ κ‘))
+  (#(Cont e-body κ e‘ κ‘) . --> . #(Reachable e-body κ) #(Parent e-body p) #(Lam p _ e-body) #(Step e-call κ-call e-body κ) #(Cont e-call κ-call e‘ κ‘))
+
+  ; (#(Lookup-binding x e-body e) . --> . #(Let e e-id _ e-body) #(Id e-id x))
+  ; (#(Lookup-binding x e-init e) . --> . #(Lookup-binding x p e) #(Let p _ e-init _))
+  ; (#(Lookup-binding x e-body e) . --> . #(Lookup-binding x p e) #(Let p e-id _ e-body) (¬ #(Id e-id x)))
+  ; (#(Lookup-binding x e-body e-param) . --> . #(Lam _ e-params e-body) #(∈ e-param e-params) #(Id e-param x))
+  ; (#(Lookup-binding x e-body e) . --> . #(Lookup-binding x p e) #(Lam p _ e-body)) ; TODO: (¬ #(Binds p x)))
+
+  (#(Binds e x) . --> . #(Lam e e-params _) #(∈1 e-param e-params) #(Id e-param x))
+
+  (#(Evaluated e e κ) . --> . #(Reachable e κ) #(Lit e _))
+  (#(Evaluated e e κ) . --> . #(Reachable e κ) #(Id e _))
+  (#(Evaluated e e κ) . --> . #(Reachable e κ) #(Lam e _ _))
+  ; (#(Evaluated e e κ) . --> . #(Reachable e κ) #(Let e _ _ _))
+  ; (#(Evaluated e e κ) . --> . #(Reachable e κ) #(App e _ _))
+  (#(Evaluated e-rator e κ) . --> . #(Reachable e κ) #(App e e-rator _))
+  (#(Evaluated e-rand e κ) . --> . #(Reachable e κ) #(App e _ e-rands) #(∈1 e-rand e-rands))
+  (#(Evaluated e-cond e κ) . --> . #(Reachable e κ) #(If e e-cond _ _))
+
+  (#(Lookup-root x e-body κ #(root e-init e-init κ)) . --> . #(Reachable e κ) #(Let e e-id e-init e-body) #(Id e-id x))
+  (#(Lookup-root x e-init κ #(root e-init e-init κ)) . --> . #(Reachable e κ) #(Letrec e e-id e-init _) #(Id e-id x))
+  (#(Lookup-root x e-body κ #(root e-init e-init κ)) . --> . #(Reachable e κ) #(Letrec e e-id e-init e-body) #(Id e-id x))
+  (#(Lookup-root x e-init κ r) . --> . #(Lookup-root x p κ r) #(Let p _ e-init _))
+  (#(Lookup-root x e-body κ r) . --> . #(Lookup-root x p κ r) #(Let p e-id _ e-body) (¬ #(Id e-id x)))
+  (#(Lookup-root x e-init κ r) . --> . #(Lookup-root x p κ r) #(Letrec p e-id e-init _) (¬ #(Id e-id x)))
+  (#(Lookup-root x e-body κ r) . --> . #(Lookup-root x p κ r) #(Letrec p e-id _ e-body) (¬ #(Id e-id x)))
+  (#(Lookup-root x e-cond κ r) . --> . #(Lookup-root x p κ r) #(If p e-cond _ _))
+  (#(Lookup-root x e-then κ r) . --> . #(Lookup-root x p κ r) #(If p _ e-then _))
+  (#(Lookup-root x e-else κ r) . --> . #(Lookup-root x p κ r) #(If p _ _ e-else))
+  (#(Lookup-root x e-body κ‘ #(root e-rand e κ)) . --> . #(Step e κ e-body κ‘) #(App e e-rator e-rands) #(Lam e-lam e-params e-body)
+                                                         #(∈1 e-param i e-params) #(Id e-param x) #(∈3 e-rand i e-rands))
+  (#(Lookup-root x e-body κ‘ r) . --> . #(Step e κ e-body κ‘) #(App e e-rator _) #(Geval e-rator e κ #(obj e-lam e-obj κ-obj))
+                                        #(Lookup-root x e-obj κ-obj r) (¬ #(Binds e-lam x)))
+  (#(Lookup-root "+" e κ #f) . --> . #(Root e) #(Reachable e κ))
+  (#(Lookup-root "-" e κ #f) . --> . #(Root e) #(Reachable e κ))
+  (#(Lookup-root "*" e κ #f) . --> . #(Root e) #(Reachable e κ))
+  (#(Lookup-root "=" e κ #f) . --> . #(Root e) #(Reachable e κ))
+  (#(Lookup-root "<" e κ #f) . --> . #(Root e) #(Reachable e κ))
+  (#(Lookup-root x e‘ κ r) . --> . #(Evaluated e‘ e κ) #(Lookup-root x e κ r)) ; test whether needed
+  
+  ; (#(Compound-app e κ) . --> . #(Step e κ e-body κ‘) #(App e _ _) #(Lam _ _ e-body))
+
+  (#(Geval e‘ e κ d) . --> . #(Evaluated e‘ e κ) #(Lit e‘ d))
+  (#(Geval e‘ e κ d) . --> . #(Evaluated e‘ e κ) #(Id e‘ x) #(Lookup-root x e κ #(root e-r e-rs κ-rs)) #(Geval e-r e-rs κ-rs d))
+  (#(Geval e‘ e κ #(prim proc)) . --> . #(Evaluated e‘ e κ) #(Id e‘ x) #(Lookup-root x e κ #f) #(Prim x proc))
+  (#(Geval e‘ e κ #(obj e‘ e κ)) . --> . #(Evaluated e‘ e κ) #(Lam e‘ _ _))
+  (#(Geval e e κ d) . --> . #(Reachable e κ) #(Let e _ _ e-body) #(Geval e-body e-body κ d))
+  (#(Geval e e κ d) . --> . #(Reachable e κ) #(Letrec e _ _ e-body) #(Geval e-body e-body κ d))
+  (#(Geval e e κ d) . --> . #(Step e κ e-body κ‘) #(App e _ _) #(Lam _ _ e-body) #(Geval e-body e-body κ‘ d))
+  (#(Geval e e κ d) . --> . #(Reachable e κ) #(App e e-rator e-rands) 
+                            #(Geval e-rator e κ #(prim proc)) #(∈3 e1 0 e-rands) #(Geval e1 e κ d1) #(∈3 e2 1 e-rands) #(Geval e2 e κ d2) #(= d ,(proc d1 d2)))
+  (#(Geval e e κ d) . --> . #(Step e κ e-thenelse κ) #(If e _ _ _) #(Geval e-body e-thenelse κ d))
+  
   (#(Eval e d) . --> . #(Final e κ) #(Geval e e κ d))
   
   (#(Final e κ) . --> . #(Reachable e κ) (¬ #(Step e κ e‘ κ‘)))
-
-  (#(Geval e e‘ κ‘ d) . --> . #(Reachable e‘ κ‘) #(Lit e d))
-  (#(Geval e e‘ κ‘ d) . --> . #(Reachable e‘ κ‘) #(Id e x) #(Eval-var-root e‘ κ‘ d))
-
-  (#(Reachable e‘ κ‘) . --> . #(Reachable e κ) #(Step e κ e‘ κ‘))
-  
-  (#(Step e κ e‘ κ‘) . --> . #(Reachable e κ) #(Lit e d) #(Cont e κ e‘ κ‘))
-  (#(Step e κ e‘ κ‘) . --> . #(Reachable e κ) #(Id e d) #(Cont e κ e‘ κ‘))
-  (#(Step e κ e-init κ) . --> . #(Reachable e κ) #(Let e e-id e-init e-body))
-  (#(Step e κ e-init κ) . --> . #(Reachable e κ) #(Letrec e e-id e-init e-body))
-
-  (#(Cont e κ e-body κ) . --> . #(Reachable e κ) #(Parent e p) #(Let p _ e e-body))
-  (#(Cont e κ e-body κ) . --> . #(Reachable e κ) #(Parent e p) #(Letrec p _ e e-body))
-
-  (#(Eval-var-root e-rs κ-rs d) . --> . #(Lookup-var-root x e κ #(root e-r e-rs κ-rs)) #(Geval e-r e-rs κ-rs d))
-
-  (#(Lookup-var-root x e κ #(root e-init e-init κ)) . --> . #(Reachable e κ) #(Parent e p) #(Let p e-id e-init _) #(Id e-id x) (¬ #(Let p _ e _)))
-
-  
 ))
 
 
@@ -82,14 +165,88 @@
            (error (format "wrong result for ~a:\n\texpected ~a\n\tgot      ~a" e expected result)))))
 
 (define (conc-eval e)
-  (let ((E (set-add (ast->facts e) #(Reachable 0 0))))
+  (let ((E (set-union (ast->facts e) (set `#(Prim "+" ,+) `#(Prim "-" ,-) `#(Prim "*" ,*) `#(Prim "=" ,=) `#(Prim "<" ,<)))))
     (printf "~a\n" E)
     (let ((facts (solve-naive P E)))
+      (unless (= 1 (length (sequence->list (sequence-filter (lambda (a) (eq? 'Root (atom-name a))) (in-set facts)))))
+        (error 'conc-eval "wrong number of Roots"))
       (let ((Eval (sequence->list (sequence-filter (lambda (a) (eq? 'Eval (atom-name a))) (in-set facts)))))
         (if (= (length Eval) 1)
             (vector-ref (car Eval) 2)
             (error 'conc-eval "wrong Eval result: ~a" Eval))))))
 
-; (test-rules '123 123)
-; (test-rules '(let ((x 10)) x) 10)
-(test-machine '(let ((x 10)) (let ((y 20)) y)) 20)
+(test-rules '123 123)
+(test-rules '(let ((x 10)) x) 10)
+(test-rules '(let ((x 10)) (let ((y 20)) y)) 20)
+(test-rules '(let ((x 10)) (let ((y 20)) x)) 10)
+(test-rules '(let ((x 10)) (let ((x 20)) x)) 20)
+(test-rules '(let ((x 123)) (let ((u (let ((x #f)) "dummy"))) x)) 123)
+(test-rules '(let ((x 123)) (let ((u (let ((y "dummy")) (let ((x #f)) "dummy2")))) x)) 123)
+(test-rules '(let ((x (let ((z 3)) z))) x) 3)
+
+(test-rules '(let ((f (lambda () 123))) (f)) 123) ; added 
+(test-rules '(let ((f (lambda (x) x))) (f 123)) 123) ; added
+(test-rules '(let ((x 123)) (let ((f (lambda () x))) (f))) 123)
+(test-rules '(let ((x 123)) (let ((f (lambda () x))) (let ((x 999)) (f)))) 123)
+(test-rules '(let ((f (lambda (x) (let ((v x)) v)))) (f 123)) 123)
+(test-rules '(let ((f (lambda (x) x))) (let ((v (f 999))) v)) 999)
+(test-rules '(let ((f (lambda (x) x))) (let ((u (f 1))) (f 2))) 2)
+
+(test-rules '(+ 1 1) 2)
+(test-rules '(let ((x (+ 1 1))) x) 2)
+(test-rules '(let ((f (lambda () (- 5 3)))) (f)) 2)
+(test-rules '(let ((f (lambda (x) (* x x)))) (f 4)) 16)
+(test-rules '((lambda (x) (* x x)) 4) 16)
+(test-rules '(let ((f (lambda (g) (g 4)))) (f (lambda (x) (* x x)))) 16)
+(test-rules '(let ((f (lambda (x) x))) (let ((v (+ 3 9))) v)) 12)
+
+(test-rules '(let ((g (lambda (v) v))) (let ((f (lambda (n) (let ((m (g 123))) (* m n))))) (f 2))) 246)
+(test-rules '(let ((f (lambda (y) (let ((x y)) x)))) (let ((z (f "foo"))) (f 1))) 1)
+(test-rules '(let ((f (lambda (x) (let ((i (lambda (a) a))) (i x))))) (let ((z1 (f 123))) (let ((z2 (f #t))) z2))) #t)
+(test-rules '(let ((f (lambda () (lambda (x) (* x x))))) (let ((g (f))) (g 4))) 16)
+
+(test-rules '(if #t 1 2) 1)
+(test-rules '(if #f 1 2) 2)
+(test-rules '(if #t (+ 3 5) (- 4 6)) 8)
+(test-rules '(if #f (+ 3 5) (- 4 6)) -2)
+(test-rules '(if #t (let ((x 1)) x) (let ((x 2)) x)) 1)
+(test-rules '(if #f (let ((x 1)) x) (let ((x 2)) x)) 2)
+(test-rules '(let ((x (if #t 1 2))) x) 1)
+(test-rules '(let ((x (if #f 1 2))) x) 2)
+(test-rules '(let ((f (lambda (x) (* x x)))) (let ((v (f 4))) (if v (f 5) (f 6)))) 25)
+
+(test-rules '(let ((f (lambda (x) (lambda (y) x)))) (let ((v (f 123))) (v 999))) 123)
+(test-rules '(let ((f (lambda (x) (lambda (x) x)))) (let ((v (f 123))) (v 999))) 999)
+(test-rules '(let ((f (lambda (g) (g 678)))) (let ((id (lambda (x) x))) (f id))) 678)
+(test-rules '(let ((f (lambda (g x) (g x)))) (let ((id (lambda (x) x))) (f id 789))) 789)
+(test-rules '(let ((f (lambda (g) (lambda (x) (g x))))) (let ((sq (lambda (x) (* x x)))) (let ((ff (f sq))) (ff 11)))) 121)
+(test-rules '(let ((f (lambda (n) (let ((x n)) (lambda () x))))) (let ((f0 (f 0))) (let ((f1 (f 1))) (let ((u (f1))) (f0))))) 0)
+
+(test-rules '(letrec ((f (lambda (x) (if x "done" (f #t))))) (f #f)) "done")
+(test-rules '(letrec ((f (lambda (x) (let ((v (= x 2))) (if v x (let ((u (+ x 1))) (f u))))))) (f 0)) 2)
+(test-rules '(letrec ((count (lambda (n) (let ((t (= n 0))) (if t 123 (let ((u (- n 1))) (let ((v (count u))) v))))))) (count 1)) 123)
+(test-rules '(letrec ((fac (lambda (n) (let ((v (= n 0))) (if v 1 (let ((m (- n 1))) (let ((w (fac m))) (* n w)))))))) (fac 1)) 1)
+(test-rules '(letrec ((fac (lambda (n) (let ((v (= n 0))) (if v 1 (let ((m (- n 1))) (let ((w (fac m))) (* n w)))))))) (fac 3)) 6)
+(test-rules '(letrec ((fib (lambda (n) (let ((c (< n 2))) (if c n (let ((n1 (- n 1))) (let ((n2 (- n 2))) (let ((f1 (fib n1))) (let ((f2 (fib n2))) (+ f1 f2)))))))))) (fib 1)) 1)
+(test-rules '(letrec ((fib (lambda (n) (let ((c (< n 2))) (if c n (let ((n1 (- n 1))) (let ((f1 (fib n1))) (let ((n2 (- n 2))) (let ((f2 (fib n2))) (+ f1 f2)))))))))) (fib 1)) 1)
+(test-rules '(letrec ((fib (lambda (n) (let ((c (< n 2))) (if c n (let ((n1 (- n 1))) (let ((n2 (- n 2))) (let ((f1 (fib n1))) (let ((f2 (fib n2))) (+ f1 f2)))))))))) (fib 3)) 2)
+(test-rules '(letrec ((fib (lambda (n) (let ((c (< n 2))) (if c n (let ((n1 (- n 1))) (let ((f1 (fib n1))) (let ((n2 (- n 2))) (let ((f2 (fib n2))) (+ f1 f2)))))))))) (fib 3)) 2)
+
+(test-rules 'x 'FAIL)
+(test-rules '(let ((f (lambda () f))) (f)) 'FAIL)
+
+
+; set!
+; (test-rules '(let ((g #f)) (let ((f (lambda (n) (let ((x n)) (let ((u (if g 123 (set! g (lambda (y) (set! x y)))))) (lambda () x))))))
+;                                (let ((f0 (f 0)))
+;                                  (let ((u (g 9)))
+;                                    (let ((f1 (f 1)))
+;                                      (let ((u (f1)))
+;                                        (f0))))))) 9)
+
+
+; cons car cdr
+; (test-machine '(let ((x (if #t (cons 1 2) (cons 3 4)))) (car x)) 1)
+; (test-machine '(let ((x (if #t (cons 1 2) (cons 3 4)))) (cdr x)) 2)
+; (test-machine '(let ((x (if #f (cons 1 2) (cons 3 4)))) (car x)) 3)
+; (test-machine '(let ((x (if #f (cons 1 2) (cons 3 4)))) (cdr x)) 4)

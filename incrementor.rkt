@@ -2,9 +2,11 @@
 
 (provide (all-defined-out))
 
-; terminology: http://www.cse.unsw.edu.au/~cs9416/06s1/prolog/datalog.pdf
+(random-seed 111)
+(define ns (make-base-namespace))
 
 (struct ¬ (p) #:transparent)
+(struct ← (p) #:transparent)
 
 (define (atom-name a)
   (vector-ref a 0))
@@ -167,7 +169,7 @@
 (define (solve-naive P E)
 
   (define S* (stratify P))
-  (printf "stratify ~v\n\n" S*)
+  ;(printf "stratify ~v\n\n" S*)
 
   (let inter-loop ((E E) (S S*))
     (printf "\ninter ~a/~a with ~a facts\n" (- (set-count S*) (set-count S)) (set-count S*) (set-count E))
@@ -191,16 +193,21 @@
   (let ((terms 
     (for/list ((i (in-range (atom-arity hv))))
       (let ((x (atom-term hv i)))
-        (if (vector? x)
-          (bind-fact x env)
-          (hash-ref env x (lambda () (error 'bind-fact "no value for ~a (env: ~a)" x env))))))))
+        (cond
+          ((symbol? x)
+            (hash-ref env x (lambda () (error 'bind-fact "no value for ~a in ~a" x env))))
+          ((vector? x)
+            (bind-fact x env))
+          ((and (pair? x) (eq? (car x) 'quote))
+            (cadr x))
+          (else x))))))
   (let ((new-fact (apply vector-immutable (cons (atom-name hv) terms))))
     new-fact)))
 
 (define (fire rule E)
   ;(printf "fire rule ~v E ~v\n" rule E)
   (let loop ((W (set (cons (cdr rule) (hash)))) (ΔE (set)))
-    ;(printf "loop ~v\n" W)\;
+    ;(printf "loop ~v\n" W)
     (if (set-empty? W)
         ΔE
         (match-let (((cons atoms env) (set-first W)))
@@ -211,53 +218,122 @@
                 (loop (set-rest W) (set-add ΔE new-fact))))
             (let ((av (car atoms)))
               (match av
-                ((¬ av)
-                  (let e-loop ((E E))
-                    (if (set-empty? E)
-                        (loop (set-add (set-rest W) (cons (cdr atoms) env)) ΔE)
-                        (let ((ev (set-first E)))
-                          (let ((m (matchare av ev env)))
-                            ;(printf "¬ matchare result: ~v\n" m)
-                            (if m
-                                (loop (set-rest W) ΔE)
-                                (e-loop (set-rest E))))))))                      
-                (_
+                ((¬ av) ; duplicating special terms, other strategy: let special forms return results one by one for "fail-fast"
+                  (match av
+                    ((vector '= p q)
+                      (let ((atoms-rest (cdr atoms)))
+                        (let ((pp (evalare p env)))
+                          (let ((qq (evalare q env)))
+                            (let ((env* (matchare pp qq env)))
+                              (if env*
+                                  (loop (set-rest W) ΔE)
+                                  (loop (set-add (set-rest W) (cons (cdr atoms) env)) ΔE)))))))
+                    (_
+                      (let e-loop ((E E))
+                        (if (set-empty? E)
+                            (loop (set-add (set-rest W) (cons (cdr atoms) env)) ΔE)
+                            (let ((ev (set-first E)))
+                              (let ((env* (matchare av ev env)))
+                                ;(printf "¬ matchare result ~a ~a: ~v\n" av ev m)
+                                (if env*
+                                    (loop (set-rest W) ΔE)
+                                    (e-loop (set-rest E))))))))))
+                ((vector 'DEBUG name)
+                  (printf "~a: about to match ~a with ~a\n\n" name (cadr atoms) env)
+                  (loop (set-add (set-rest W) (cons (cdr atoms) env)) ΔE))
+                ((vector '∈1 x index l) ; for all (x, i) in l
+                  (let ((d-lst (evalare2 l env)))
+                    (let ((atoms-rest (cdr atoms)))
+                      (loop (for/fold ((W (set-rest W))) ((el d-lst) (i (in-naturals)))
+                                          (set-add W (cons atoms-rest (hash-set (hash-set env index i) x el))))
+                                        ΔE))))
+                ((vector '∈3 x index l) ; select x at index in l
+                  (let ((d-index (evalare2 index env)))
+                    (let ((d-lst (evalare2 l env)))
+                      (let ((atoms-rest (cdr atoms)))
+                        (loop (set-add (set-rest W) (cons atoms-rest (hash-set env x (list-ref d-lst d-index)))) ΔE)))))
+                ((vector '∈5 x index l) ; index of x in l
+                  (let ((d-x (evalare2 index env)))
+                    (let ((d-lst (evalare2 l env)))
+                      (let ((atoms-rest (cdr atoms)))
+                        (loop (set-add (set-rest W) (cons atoms-rest (hash-set env index (index-of d-lst d-x)))) ΔE))))) ; only finds first index
+                ((vector '∈1 x l) ; for all x in l
+                  (let ((d-lst (evalare2 l env)))
+                    (let ((atoms-rest (cdr atoms)))
+                      (if (null? d-lst)
+                          (loop (set-rest W) ΔE)
+                          (loop (for/fold ((W (set-rest W))) ((el d-lst))
+                            (set-add W (cons atoms-rest (hash-set env x el))))
+                            ΔE)))))
+                ((vector '= p q)
+                  (let ((atoms-rest (cdr atoms)))
+                    (let ((pp (evalare p env)))
+                      (let ((qq (evalare q env)))
+                        (let ((env* (matchare pp qq env)))
+                        (if env*
+                            (loop (set-add (set-rest W) (cons atoms-rest env*)) ΔE)
+                            (loop (set-rest W) ΔE)))))))
+                (_ 
                   (let e-loop ((E E) (W (set-rest W)))
                     (if (set-empty? E)
                         (loop W ΔE)
                         (let ((ev (set-first E)))
-                          (let ((m (matchare av ev env)))
-                            ;(printf "matchare result: ~v\n" m)
-                            (if m
-                                (e-loop (set-rest E) (set-add W (cons (cdr atoms) m)))
+                          (let ((env* (matchare av ev env)))
+                            ;(when m (printf "matchare result: ~v\n" m))
+                            (if env*
+                                (e-loop (set-rest E) (set-add W (cons (cdr atoms) env*)))
                                 (e-loop (set-rest E) W))))))))))))))
 
-(define (matchare av ev ρ)
-  ;(printf "matchare ~v ~v ~v\n" av ev ρ)
-  (if (and (eq? (vector-ref av 0) (vector-ref ev 0)) (= (atom-arity av) (atom-arity ev)))
-      (let loop ((i 1) (ρ ρ))
-        (if (= i (vector-length av))
+
+(define (evalare x ρ)
+  (match x
+    ((cons 'unquote y)
+      (evalare2 (car y) ρ))
+    (_
+      x)))
+
+(define (evalare2 x ρ)
+  ;(printf "evalare ~a\n" x)
+  (cond
+    ((symbol? x)
+      (hash-ref ρ x (lambda () (eval x ns))))
+    ((list? x)
+      (let ((rator (evalare2 (car x) ρ)))
+        (let ((rands (map (lambda (rand) (evalare2 rand ρ)) (cdr x))))
+          (apply rator rands))))
+   (else x)))
+
+
+(define (matchare xxx y ρ) ; x = rule, y = fact
+  ;(printf "matchare ~a ~a ~a\n" xxx y ρ)
+  (let ((x (evalare xxx ρ)))
+    (cond
+      ((and (vector? x) (vector? y) (eq? (vector-ref x 0) (vector-ref y 0)) (= (atom-arity x) (atom-arity y)))
+        (let term-loop ((i 1) (ρ ρ))
+          (if (= i (vector-length x))
+              ρ
+              (let ((xx (vector-ref x i)))
+                (let ((yy (vector-ref y i)))
+                  (let ((ρ* (matchare xx yy ρ)))
+                    (if ρ*
+                        (term-loop (add1 i) ρ*)
+                        #f)))))))
+      ((eq? x '_)
+        ρ)
+      ((symbol? x)
+        (if (hash-has-key? ρ x)
+              (let ((existing-value (hash-ref ρ x)))
+                  (if (equal? existing-value y)
+                      ρ
+                      #f))
+              (hash-set ρ x y)))
+      ((and (pair? x) (eq? (car x) 'quote))
+        (if (eq? (cadr x) y)
             ρ
-            (match* ((vector-ref av i) (vector-ref ev i))
-              ((x x) (loop (add1 i) ρ))
-              (('_ _) (loop (add1 i) ρ))
-              ((x y)
-                ;(printf "x ~a y ~a\n" x y)
-                (if (hash-has-key? ρ x)
-                  (let ((existing-value (hash-ref ρ x)))
-                    (if (equal? existing-value y)
-                        (loop (add1 i) ρ)
-                        #f))
-                  (loop (add1 i) (hash-set ρ x y))))
-            )))
-      #f))
-
-
-
-
-
-
-
+            #f))
+      ((equal? x y)
+        ρ)
+      (else #f))))
 
 (module+ main
   123
