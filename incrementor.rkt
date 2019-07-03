@@ -165,29 +165,55 @@
                             r))))
         S))
 
+(define (evalare x ρ)
+  (match x
+    ((cons 'unquote y)
+      (evalare2 (car y) ρ))
+    (_
+      x)))
 
-(define (solve-naive P E)
+(define (evalare2 x ρ)
+  ;(printf "evalare ~a\n" x)
+  (cond
+    ((symbol? x)
+      (hash-ref ρ x (lambda () (eval x ns))))
+    ((list? x)
+      (let ((rator (evalare2 (car x) ρ)))
+        (let ((rands (map (lambda (rand) (evalare2 rand ρ)) (cdr x))))
+          (apply rator rands))))
+   (else x)))
 
-  (define S* (stratify P))
-  ;(printf "stratify ~v\n\n" S*)
 
-  (let inter-loop ((E E) (S S*))
-    (printf "\ninter ~a/~a with ~a facts\n" (- (set-count S*) (set-count S)) (set-count S*) (set-count E))
-    (if (null? S)
-        E
-        (let ((Pi (car S)))
-          (printf "Pi: ~v\n" (list->set (set-map Pi (lambda (r) (atom-name (car r))))))
-          (let intra-loop ((E-intra E))
-            (let rules-iter ((rules Pi) (E* E-intra))
-              (if (set-empty? rules)
-                  (if (equal? E* E-intra)
-                        (inter-loop E* (cdr S))
-                        (let ((new-facts (set-subtract E* E-intra)))
-                          (printf "new facts: ~a\n" new-facts)
-                          (intra-loop E*)))
-                  (let ((rule (set-first rules)))
-                    (let ((ΔE (fire rule E*)))
-                      (rules-iter (set-rest rules) (set-union E* ΔE)))))))))))
+(define (matchare xxx y ρ) ; x = rule, y = fact
+  ;(printf "matchare ~a ~a ~a\n" xxx y ρ)
+  (let ((x (evalare xxx ρ)))
+    (cond
+      ((and (vector? x) (vector? y) (eq? (vector-ref x 0) (vector-ref y 0)) (= (atom-arity x) (atom-arity y)))
+        (let term-loop ((i 1) (ρ ρ))
+          (if (= i (vector-length x))
+              ρ
+              (let ((xx (vector-ref x i)))
+                (let ((yy (vector-ref y i)))
+                  (let ((ρ* (matchare xx yy ρ)))
+                    (if ρ*
+                        (term-loop (add1 i) ρ*)
+                        #f)))))))
+      ((eq? x '_)
+        ρ)
+      ((symbol? x)
+        (if (hash-has-key? ρ x)
+              (let ((existing-value (hash-ref ρ x)))
+                  (if (equal? existing-value y)
+                      ρ
+                      #f))
+              (hash-set ρ x y)))
+      ((and (pair? x) (eq? (car x) 'quote))
+        (if (eq? (cadr x) y)
+            ρ
+            #f))
+      ((equal? x y)
+        ρ)
+      (else #f))))
 
 (define (bind-fact hv env)                     
   (let ((terms 
@@ -251,7 +277,9 @@
                   (let ((d-index (evalare2 index env)))
                     (let ((d-lst (evalare2 l env)))
                       (let ((atoms-rest (cdr atoms)))
-                        (loop (set-add (set-rest W) (cons atoms-rest (hash-set env x (list-ref d-lst d-index)))) ΔE)))))
+                          (if (or (null? d-lst) (>= d-index (length d-lst)))
+                              (loop (set-rest W) ΔE)
+                              (loop (set-add (set-rest W) (cons atoms-rest (hash-set env x (list-ref d-lst d-index)))) ΔE))))))
                 ((vector '∈5 x index l) ; index of x in l
                   (let ((d-x (evalare2 index env)))
                     (let ((d-lst (evalare2 l env)))
@@ -284,56 +312,41 @@
                                 (e-loop (set-rest E) (set-add W (cons (cdr atoms) env*)))
                                 (e-loop (set-rest E) W))))))))))))))
 
+(define (solve-naive P E)
 
-(define (evalare x ρ)
-  (match x
-    ((cons 'unquote y)
-      (evalare2 (car y) ρ))
-    (_
-      x)))
+  (define S* (stratify P))
+  ;(printf "stratify ~v\n\n" S*)
 
-(define (evalare2 x ρ)
-  ;(printf "evalare ~a\n" x)
-  (cond
-    ((symbol? x)
-      (hash-ref ρ x (lambda () (eval x ns))))
-    ((list? x)
-      (let ((rator (evalare2 (car x) ρ)))
-        (let ((rands (map (lambda (rand) (evalare2 rand ρ)) (cdr x))))
-          (apply rator rands))))
-   (else x)))
+  (let inter-loop ((E E) (S S*))
+    (printf "\ninter ~a/~a with ~a facts\n" (- (set-count S*) (set-count S)) (set-count S*) (set-count E))
+    (if (null? S)
+        E
+        (let ((Pi (car S)))
+          (printf "Pi: ~v\n" (list->set (set-map Pi (lambda (r) (atom-name (car r))))))
+          (let intra-loop ((E-intra E))
+            (let rules-iter ((rules Pi) (E* E-intra))
+              (if (set-empty? rules)
+                  (if (equal? E* E-intra)
+                        (inter-loop E* (cdr S))
+                        (let ((new-facts (set-subtract E* E-intra)))
+                          (printf "new facts: ~a\n" new-facts)
+                          (intra-loop E*)))
+                  (let ((rule (set-first rules)))
+                    (let ((ΔE (fire rule E*)))
+                      (rules-iter (set-rest rules) (set-union E* ΔE)))))))))))
 
+(define (solve-semi-naive P E)
 
-(define (matchare xxx y ρ) ; x = rule, y = fact
-  ;(printf "matchare ~a ~a ~a\n" xxx y ρ)
-  (let ((x (evalare xxx ρ)))
-    (cond
-      ((and (vector? x) (vector? y) (eq? (vector-ref x 0) (vector-ref y 0)) (= (atom-arity x) (atom-arity y)))
-        (let term-loop ((i 1) (ρ ρ))
-          (if (= i (vector-length x))
-              ρ
-              (let ((xx (vector-ref x i)))
-                (let ((yy (vector-ref y i)))
-                  (let ((ρ* (matchare xx yy ρ)))
-                    (if ρ*
-                        (term-loop (add1 i) ρ*)
-                        #f)))))))
-      ((eq? x '_)
-        ρ)
-      ((symbol? x)
-        (if (hash-has-key? ρ x)
-              (let ((existing-value (hash-ref ρ x)))
-                  (if (equal? existing-value y)
-                      ρ
-                      #f))
-              (hash-set ρ x y)))
-      ((and (pair? x) (eq? (car x) 'quote))
-        (if (eq? (cadr x) y)
-            ρ
-            #f))
-      ((equal? x y)
-        ρ)
-      (else #f))))
+  (define S* (stratify P))
+
+  (let stratum-loop ((E E) (S S*))
+    (printf "\ninter ~a/~a with ~a facts\n" (- (set-count S*) (set-count S)) (set-count S*) (set-count E))
+
+    (if (null? S)
+        E
+        'else
+        )))
+
 
 (module+ main
   123
