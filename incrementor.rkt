@@ -23,7 +23,7 @@
 (define (rule-head r)
   (car r))
 
-(define (rule-terms r)
+(define (rule-body r)
   (cdr r))
 
 (struct ledge (to label) #:transparent)
@@ -161,7 +161,7 @@
 
   (map (lambda (Preds)
           (for/fold ((R (set))) ((Pred (in-set Preds)))
-            (set-union R (for/set ((r (in-set P)) #:when (eq? (atom-name (car r)) Pred))
+            (set-union R (for/set ((r (in-set P)) #:when (eq? (atom-name (car r)) Pred)) ; why not lists for "set" of rules?
                             r))))
         S))
 
@@ -230,7 +230,7 @@
   (let ((new-fact (apply vector-immutable (cons (atom-name hv) terms))))
     new-fact)))
 
-(define (fire rule E)
+(define (fire rule E delta-tuples)
   ;(printf "fire rule ~v E ~v\n" rule E)
   (let loop ((W (set (cons (cdr rule) (hash)))) (ΔE (set)))
     ;(printf "loop ~v\n" W)
@@ -254,7 +254,7 @@
                               (if env*
                                   (loop (set-rest W) ΔE)
                                   (loop (set-add (set-rest W) (cons (cdr atoms) env)) ΔE)))))))
-                    (_
+                    (_ ; TODO: *Recent* for neg: possible?
                       (let e-loop ((E E))
                         (if (set-empty? E)
                             (loop (set-add (set-rest W) (cons (cdr atoms) env)) ΔE)
@@ -301,16 +301,24 @@
                         (if env*
                             (loop (set-add (set-rest W) (cons atoms-rest env*)) ΔE)
                             (loop (set-rest W) ΔE)))))))
+                ((vector '*Recent* p)
+                  (let ((W (match-predicate p (cdr atoms) delta-tuples env (set-rest W))))
+                    (loop W ΔE)))
                 (_ 
-                  (let e-loop ((E E) (W (set-rest W)))
-                    (if (set-empty? E)
-                        (loop W ΔE)
-                        (let ((ev (set-first E)))
-                          (let ((env* (matchare av ev env)))
-                            ;(when m (printf "matchare result: ~v\n" m))
-                            (if env*
-                                (e-loop (set-rest E) (set-add W (cons (cdr atoms) env*)))
-                                (e-loop (set-rest E) W))))))))))))))
+                  (let ((W (match-predicate av (cdr atoms) E env (set-rest W))))
+                    (loop W ΔE)))
+                  )))))))
+
+(define (match-predicate av remaining-preds E env W)
+  (let e-loop ((E E) (W W))
+    (if (set-empty? E)
+        W
+        (let ((ev (set-first E)))
+          (let ((env* (matchare av ev env)))
+            ;(when m (printf "matchare result: ~v\n" m))
+            (if env*
+                (e-loop (set-rest E) (set-add W (cons remaining-preds env*)))
+                (e-loop (set-rest E) W)))))))
 
 (define (solve-naive P E)
 
@@ -324,28 +332,97 @@
         (let ((Pi (car S)))
           (printf "Pi: ~v\n" (list->set (set-map Pi (lambda (r) (atom-name (car r))))))
           (let intra-loop ((E-intra E))
-            (let rules-iter ((rules Pi) (E* E-intra))
-              (if (set-empty? rules)
-                  (if (equal? E* E-intra)
-                        (inter-loop E* (cdr S))
-                        (let ((new-facts (set-subtract E* E-intra)))
-                          (printf "new facts: ~a\n" new-facts)
-                          (intra-loop E*)))
-                  (let ((rule (set-first rules)))
-                    (let ((ΔE (fire rule E*)))
-                      (rules-iter (set-rest rules) (set-union E* ΔE)))))))))))
+            (let ((tuples (solve-naive-helper Pi E-intra)))
+              (let ((E-intra* (set-union E-intra tuples)))
+                  (if (equal? E-intra E-intra*) ; monotonicity: size check quicker? (TODO)
+                      (inter-loop E-intra* (cdr S))
+                      (let ((new-facts (set-subtract E-intra* E-intra)))
+                        (printf "new facts: ~a\n" new-facts)
+                        (intra-loop E-intra*))))))))))
+
+
+(define (solve-naive-helper rules tuples)
+  (let loop ((rules rules) (derived-tuples tuples))
+    (if (set-empty? rules) 
+        derived-tuples
+        (let ((rule (set-first rules)))
+          (let ((derived-tuples-for-rule (fire rule derived-tuples (set))))
+            (loop (set-rest rules) (set-union derived-tuples derived-tuples-for-rule)))))))
+
 
 (define (solve-semi-naive P E)
 
   (define S* (stratify P))
 
-  (let stratum-loop ((E E) (S S*))
+  (let stratum-loop ((S S*) (E E))
     (printf "\ninter ~a/~a with ~a facts\n" (- (set-count S*) (set-count S)) (set-count S*) (set-count E))
 
     (if (null? S)
         E
-        'else
-        )))
+        (let ((E* (perform-iter (car S) E)))
+          (stratum-loop (cdr S) E*)))))
+
+(define (rewrite-semi-naive rules)
+  (let ((idb-preds (for/set ((rule (in-set rules)))
+                      (atom-name (rule-head rule))))) ; this corresponds to Strata?
+
+  (define (rewrite-rule rule)
+    (let ((head (rule-head rule))
+          (body (rule-body rule)))
+      
+    (define (rewrite-terms previous-terms future-terms rewrites)
+      (if (null? future-terms)
+          (if (set-empty? rewrites)
+              (set rule)
+              rewrites)
+          (let ((term (car future-terms)))
+            (if (struct? term)
+                (rewrite-terms (cons term previous-terms) (cdr future-terms) rewrites)
+                (let ((name (atom-name term)))
+                  (if (set-member? idb-preds name)
+                      (rewrite-terms (cons term previous-terms) (cdr future-terms) (set-add rewrites (rewrite-term term (reverse previous-terms) (cdr future-terms))))
+                      (rewrite-terms (cons term previous-terms) (cdr future-terms) rewrites)))))))
+
+    (define (rewrite-term term previous-terms future-terms)
+      (cons head (append previous-terms (list `#(*Recent* ,term)) future-terms)))
+    
+    (rewrite-terms '() body (set))))
+
+    (for/fold ((rewritten-rules (set))) ((rule (in-set rules)))
+        (set-union rewritten-rules (rewrite-rule rule)))))
+
+
+(define (perform-iter rules tuples)
+
+  (define semi-naive-rules (rewrite-semi-naive rules))
+  (printf "semi-naive rules: ~a\ntuples: ~a\n" semi-naive-rules tuples)
+  (define pred-name-to-rules
+    (for/fold ((R (hash))) ((snr (in-set semi-naive-rules)))
+      (for/fold ((R R)) ((term (in-list (rule-body snr))))
+        (let ((term-name (atom-name term)))
+          (if (equal? term-name '*Recent*)
+              (let ((recent-term (vector-ref term 1)))
+                (let ((recent-name (atom-name recent-term)))
+                  (hash-set R recent-name (set-add (hash-ref R recent-name (set)) snr))))
+              (hash-set R term-name (set-add (hash-ref R term-name (set)) snr))))))) ; always an EDB?
+  (printf "pred-name-to-rules ~a\n" pred-name-to-rules)
+  
+  (let rule-loop ((rules* semi-naive-rules) (tuples tuples) (previous-delta-tuples tuples) (delta-tuples (set)))
+    (let ((delta-rules
+            (for/fold ((R (set))) ((previous-delta-tuple (in-set previous-delta-tuples)))
+              (set-union R (hash-ref pred-name-to-rules (atom-name previous-delta-tuple) (set))))))
+      (printf "delta rules :~a\n" delta-rules)
+      (let delta-rule-loop ((rules* delta-rules) (delta-tuples delta-tuples))
+        (if (set-empty? rules*)
+          (let ((real-delta-tuples (set-subtract delta-tuples tuples)))
+            (printf "delta-tuples ~a\nreal-delta-tuples ~a\n" delta-tuples real-delta-tuples)
+            (if (set-empty? real-delta-tuples)
+                tuples
+                (rule-loop semi-naive-rules (set-union tuples real-delta-tuples) real-delta-tuples (set))))
+          (let ((rule (set-first rules*)))
+            (let ((derived-tuples-for-rule (fire rule tuples previous-delta-tuples)))
+              ;(printf "fired ~a got ~a\n" rule derived-tuples-for-rule)
+              (delta-rule-loop (set-rest rules*) (set-union delta-tuples derived-tuples-for-rule)))))))))
 
 
 (module+ main

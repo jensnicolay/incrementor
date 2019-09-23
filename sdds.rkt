@@ -143,7 +143,7 @@
 (define (conc-eval e)
   (let ((E (set-union (ast->facts e) (set `#(Prim "+" ,+) `#(Prim "-" ,-) `#(Prim "*" ,*) `#(Prim "=" ,=) `#(Prim "<" ,<)))))
     (printf "~a\n" E)
-    (let ((facts (solve-naive P E)))
+    (let ((facts (solve-semi-naive P E)))
       (unless (= 1 (length (sequence->list (sequence-filter (lambda (a) (eq? 'Root (atom-name a))) (in-set facts)))))
         (error 'conc-eval "wrong number of Roots"))
       (let ((Eval (sequence->list (sequence-filter (lambda (a) (eq? 'Eval (atom-name a))) (in-set facts)))))
