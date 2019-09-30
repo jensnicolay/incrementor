@@ -254,7 +254,7 @@
                               (if env*
                                   (loop (set-rest W) ΔE)
                                   (loop (set-add (set-rest W) (cons (cdr atoms) env)) ΔE)))))))
-                    (_ ; TODO: *Recent* for neg: possible?
+                    (_
                       (let e-loop ((E E))
                         (if (set-empty? E)
                             (loop (set-add (set-rest W) (cons (cdr atoms) env)) ΔE)
@@ -376,42 +376,51 @@
               (set rule)
               rewrites)
           (let ((term (car future-terms)))
-            (if (struct? term)
-                (rewrite-terms (cons term previous-terms) (cdr future-terms) rewrites)
+            (match term
+              ((¬ p) ; in a stratified Datalog, all negated preds are guaranteed to be EDBs, so no action necessary
+                (rewrite-terms (cons term previous-terms) (cdr future-terms) rewrites))
+              (_
                 (let ((name (atom-name term)))
                   (if (set-member? idb-preds name)
-                      (rewrite-terms (cons term previous-terms) (cdr future-terms) (set-add rewrites (rewrite-term term (reverse previous-terms) (cdr future-terms))))
-                      (rewrite-terms (cons term previous-terms) (cdr future-terms) rewrites)))))))
+                      (rewrite-terms (cons term previous-terms) (cdr future-terms) (set-add rewrites (cons head (append (reverse previous-terms) (list `#(*Recent* ,term)) (cdr future-terms)))))
+                      (rewrite-terms (cons term previous-terms) (cdr future-terms) rewrites))))))))
 
-    (define (rewrite-term term previous-terms future-terms)
-      (cons head (append previous-terms (list `#(*Recent* ,term)) future-terms)))
+    ; (define (rewrite-term term previous-terms future-terms)
+    ;   (cons head (append previous-terms (list `#(*Recent* ,term)) future-terms)))
     
     (rewrite-terms '() body (set))))
 
     (for/fold ((rewritten-rules (set))) ((rule (in-set rules)))
-        (set-union rewritten-rules (rewrite-rule rule)))))
+      (let ((rewrites (rewrite-rule rule)))
+        (set-union rewritten-rules rewrites)))))
 
 
 (define (perform-iter rules tuples)
 
   (define semi-naive-rules (rewrite-semi-naive rules))
-  (printf "semi-naive rules: ~a\ntuples: ~a\n" semi-naive-rules tuples)
+  ;(printf "semi-naive rules: ~a\ntuples: ~a\n" semi-naive-rules tuples)
   (define pred-name-to-rules
     (for/fold ((R (hash))) ((snr (in-set semi-naive-rules)))
       (for/fold ((R R)) ((term (in-list (rule-body snr))))
-        (let ((term-name (atom-name term)))
-          (if (equal? term-name '*Recent*)
-              (let ((recent-term (vector-ref term 1)))
-                (let ((recent-name (atom-name recent-term)))
-                  (hash-set R recent-name (set-add (hash-ref R recent-name (set)) snr))))
-              (hash-set R term-name (set-add (hash-ref R term-name (set)) snr))))))) ; always an EDB?
-  (printf "pred-name-to-rules ~a\n" pred-name-to-rules)
+        (match term
+          ((¬ p)
+           (let ((term-name (atom-name p)))
+            (hash-set R term-name (set-add (hash-ref R term-name (set)) snr)))) ; remember: no *Recent* possible!
+          (_ 
+            (let ((term-name (atom-name term)))
+              (if (equal? term-name '*Recent*)
+                  (let ((recent-term (vector-ref term 1)))
+                    (let ((recent-name (atom-name recent-term)))
+                      (hash-set R recent-name (set-add (hash-ref R recent-name (set)) snr))))
+                  (hash-set R term-name (set-add (hash-ref R term-name (set)) snr)))))
+          )))) ; always an EDB?
+  ;(printf "pred-name-to-rules ~a\n" pred-name-to-rules)
   
   (let rule-loop ((rules* semi-naive-rules) (tuples tuples) (previous-delta-tuples tuples) (delta-tuples (set)))
     (let ((delta-rules
             (for/fold ((R (set))) ((previous-delta-tuple (in-set previous-delta-tuples)))
               (set-union R (hash-ref pred-name-to-rules (atom-name previous-delta-tuple) (set))))))
-      (printf "delta rules :~a\n" delta-rules)
+      ;(printf "delta rules :~a\n" delta-rules)
       (let delta-rule-loop ((rules* delta-rules) (delta-tuples delta-tuples))
         (if (set-empty? rules*)
           (let ((real-delta-tuples (set-subtract delta-tuples tuples)))

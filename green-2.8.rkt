@@ -15,4 +15,4 @@
 
 ;(printf "~v\n" (fire r1 E))
 
-(printf "\nsolve ~a\n\n" (solve-naive P E)) 
+(printf "\nsolve ~a\n\n" (solve-semi-naive P E)) 
