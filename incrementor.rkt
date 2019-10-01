@@ -1,5 +1,13 @@
 #lang racket
 
+; Terminology
+; * Term: Constant or Variable
+; * Atom: Predicate + list of terms
+; * EDB predicate: predicate in the source tables of the database
+; * IDB predicate: predicate in tables derived by Datalog program
+
+; Procedure names prexifed with `l` indicates labelling.
+
 (provide (all-defined-out))
 
 (random-seed 111)
@@ -8,8 +16,12 @@
 (struct ¬ (p) #:transparent)
 (struct ← (p) #:transparent)
 
+; An atom is structured as follows: Vect{ name | arg1 | arg2 | ... | argn }.
+
 (define (atom-name a)
   (vector-ref a 0))
+
+(define atom? vector?)
 
 (define (atom-arity a)
   (sub1 (vector-length a)))
@@ -17,14 +29,14 @@
 (define (atom-term a i)
   (vector-ref a (add1 i)))
 
-(define (--> head . body)
+; A rule consists out of a head and a body, the latter again consisting out of an arbitrary number of atoms.
+
+(define (:- head . body)
   (cons head body))
   
-(define (rule-head r)
-  (car r))
+(define rule-head car)
 
-(define (rule-body r)
-  (cdr r))
+(define rule-body cdr)
 
 (struct ledge (to label) #:transparent)
 
@@ -55,15 +67,16 @@
               (hash-set G dep (set-add (hash-ref G dep (set)) (ledge head +)))))
         )))))
 
-; Tarjan
-(define (lscc G)
+(define (lscc-map G)
+
+  ; Part 1: Tarjan's algorithm to find strongly connected components in a directed graph (= each node is reachable from every other node).
 
   (define index 0)
   (define S '())
   (define Index (hash))
   (define Lowlink (hash))
   (define Onstack (hash))
-  (define SCC (set))
+  (define SCC (set))        ; Strongly connected components.
 
   (define (strongconnect v)
     (set! Index (hash-set Index v index))
@@ -96,9 +109,8 @@
     (let ((index (hash-ref Index v #f)))
       (unless index (strongconnect v))))
 
-  SCC)
+  ; Part 2: Perform a mapping step. 
 
-(define (scc-map SCC) ; TODO this can be folded into SCC 
   (let loop ((index 0) (SCC SCC) (R (hash)))
     (if (set-empty? SCC)
         R
@@ -131,8 +143,7 @@
 (define (strata P)
 
   (define G-pred (precedence-lgraph P))
-  (define SCC (lscc G-pred))
-  (define v2cid (scc-map SCC))
+  (define v2cid (lscc-map G-pred))
 
   (define G-red
     (for/fold ((R (hash))) (((from edges) (in-hash G-pred)))
@@ -165,54 +176,51 @@
                             r))))
         S))
 
-(define (evalare x ρ)
+(define (evalare x env)
   (match x
-    ((cons 'unquote y)
-      (evalare2 (car y) ρ))
-    (_
-      x)))
+    ((cons 'unquote y) (evalare2 (car y) env))
+    (_ x)))
 
-(define (evalare2 x ρ)
+; Evaluate x in a given environment of bindings.
+(define (evalare2 x env)
   ;(printf "evalare ~a\n" x)
   (cond
-    ((symbol? x)
-      (hash-ref ρ x (lambda () (eval x ns))))
+    ((symbol? x) (hash-ref env x (lambda () (eval x ns)))) ; Look up symbols in the given environment.
     ((list? x)
-      (let ((rator (evalare2 (car x) ρ)))
-        (let ((rands (map (lambda (rand) (evalare2 rand ρ)) (cdr x))))
-          (apply rator rands))))
-   (else x)))
+      (let ((operator (evalare2 (car x) env))
+            (operands (map (lambda (operand) (evalare2 operand env)) (cdr x))))
+          (apply operator operands)))
+    (else x)))
 
-
-(define (matchare xxx y ρ) ; x = rule, y = fact
-  ;(printf "matchare ~a ~a ~a\n" xxx y ρ)
-  (let ((x (evalare xxx ρ)))
+(define (unify xxx y env) ; x = rule, y = fact
+  ;(printf "unify ~a ~a ~a\n" xxx y env)
+  (let ((x (evalare xxx env)))
+    ;(printf "eval ~a ~a\n" xxx x)
     (cond
-      ((and (vector? x) (vector? y) (eq? (vector-ref x 0) (vector-ref y 0)) (= (atom-arity x) (atom-arity y)))
-        (let term-loop ((i 1) (ρ ρ))
+      ((and (atom? x) (atom? y) (eq? (atom-name x) (atom-name y)) (= (atom-arity x) (atom-arity y)))
+        (let term-loop ((i 1) (env env)) ; Check unifiability for all argument terms of the atom.
           (if (= i (vector-length x))
-              ρ
+              env
               (let ((xx (vector-ref x i)))
                 (let ((yy (vector-ref y i)))
-                  (let ((ρ* (matchare xx yy ρ)))
-                    (if ρ*
-                        (term-loop (add1 i) ρ*)
+                  (let ((env* (unify xx yy env)))
+                    (if env*
+                        (term-loop (add1 i) env*)
                         #f)))))))
-      ((eq? x '_)
-        ρ)
+      ((eq? x '_) env)
       ((symbol? x)
-        (if (hash-has-key? ρ x)
-              (let ((existing-value (hash-ref ρ x)))
+        (if (hash-has-key? env x)
+              (let ((existing-value (hash-ref env x)))
                   (if (equal? existing-value y)
-                      ρ
+                      env
                       #f))
-              (hash-set ρ x y)))
+              (hash-set env x y)))
       ((and (pair? x) (eq? (car x) 'quote))
         (if (eq? (cadr x) y)
-            ρ
+            env
             #f))
       ((equal? x y)
-        ρ)
+        env)
       (else #f))))
 
 (define (bind-fact hv env)                     
@@ -250,7 +258,7 @@
                       (let ((atoms-rest (cdr atoms)))
                         (let ((pp (evalare p env)))
                           (let ((qq (evalare q env)))
-                            (let ((env* (matchare pp qq env)))
+                            (let ((env* (unify pp qq env)))
                               (if env*
                                   (loop (set-rest W) ΔE)
                                   (loop (set-add (set-rest W) (cons (cdr atoms) env)) ΔE)))))))
@@ -259,8 +267,8 @@
                         (if (set-empty? E)
                             (loop (set-add (set-rest W) (cons (cdr atoms) env)) ΔE)
                             (let ((ev (set-first E)))
-                              (let ((env* (matchare av ev env)))
-                                ;(printf "¬ matchare result ~a ~a: ~v\n" av ev m)
+                              (let ((env* (unify av ev env)))
+                                ;(printf "¬ unify result ~a ~a: ~v\n" av ev m)
                                 (if env*
                                     (loop (set-rest W) ΔE)
                                     (e-loop (set-rest E))))))))))
@@ -297,7 +305,7 @@
                   (let ((atoms-rest (cdr atoms)))
                     (let ((pp (evalare p env)))
                       (let ((qq (evalare q env)))
-                        (let ((env* (matchare pp qq env)))
+                        (let ((env* (unify pp qq env)))
                         (if env*
                             (loop (set-add (set-rest W) (cons atoms-rest env*)) ΔE)
                             (loop (set-rest W) ΔE)))))))
@@ -314,13 +322,21 @@
     (if (set-empty? E)
         W
         (let ((ev (set-first E)))
-          (let ((env* (matchare av ev env)))
-            ;(when m (printf "matchare result: ~v\n" m))
+          (let ((env* (unify av ev env)))
+            ;(when m (printf "unify result: ~v\n" m))
             (if env*
                 (e-loop (set-rest E) (set-add W (cons remaining-preds env*)))
                 (e-loop (set-rest E) W)))))))
 
 (define (solve-naive P E)
+
+  (define (solve-naive-helper rules tuples)
+    (let loop ((rules rules) (derived-tuples tuples))
+      (if (set-empty? rules) 
+          derived-tuples
+          (let ((rule (set-first rules)))
+            (let ((derived-tuples-for-rule (fire rule derived-tuples (set))))
+              (loop (set-rest rules) (set-union derived-tuples derived-tuples-for-rule)))))))
 
   (define S* (stratify P))
   ;(printf "stratify ~v\n\n" S*)
@@ -339,15 +355,6 @@
                       (let ((new-facts (set-subtract E-intra* E-intra)))
                         (printf "new facts: ~a\n" new-facts)
                         (intra-loop E-intra*))))))))))
-
-
-(define (solve-naive-helper rules tuples)
-  (let loop ((rules rules) (derived-tuples tuples))
-    (if (set-empty? rules) 
-        derived-tuples
-        (let ((rule (set-first rules)))
-          (let ((derived-tuples-for-rule (fire rule derived-tuples (set))))
-            (loop (set-rest rules) (set-union derived-tuples derived-tuples-for-rule)))))))
 
 
 (define (solve-semi-naive P E)
@@ -432,7 +439,6 @@
             (let ((derived-tuples-for-rule (fire rule tuples previous-delta-tuples)))
               ;(printf "fired ~a got ~a\n" rule derived-tuples-for-rule)
               (delta-rule-loop (set-rest rules*) (set-union delta-tuples derived-tuples-for-rule)))))))))
-
 
 (module+ main
   123
