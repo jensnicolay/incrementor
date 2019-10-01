@@ -176,25 +176,25 @@
                             r))))
         S))
 
-(define (evalare x env)
+(define (evaluate-unquoted x env)
   (match x
-    ((cons 'unquote y) (evalare2 (car y) env))
+    ((cons 'unquote y) (evaluate (car y) env))
     (_ x)))
 
 ; Evaluate x in a given environment of bindings.
-(define (evalare2 x env)
-  ;(printf "evalare ~a\n" x)
+(define (evaluate x env)
+  ;(printf "evaluate-unquoted ~a\n" x)
   (cond
     ((symbol? x) (hash-ref env x (lambda () (eval x ns)))) ; Look up symbols in the given environment.
     ((list? x)
-      (let ((operator (evalare2 (car x) env))
-            (operands (map (lambda (operand) (evalare2 operand env)) (cdr x))))
+      (let ((operator (evaluate (car x) env))
+            (operands (map (lambda (operand) (evaluate operand env)) (cdr x))))
           (apply operator operands)))
     (else x)))
 
 (define (unify xxx y env) ; x = rule, y = fact
   ;(printf "unify ~a ~a ~a\n" xxx y env)
-  (let ((x (evalare xxx env)))
+  (let ((x (evaluate-unquoted xxx env)))
     ;(printf "eval ~a ~a\n" xxx x)
     (cond
       ((and (atom? x) (atom? y) (eq? (atom-name x) (atom-name y)) (= (atom-arity x) (atom-arity y)))
@@ -256,8 +256,8 @@
                   (match av
                     ((vector '= p q)
                       (let ((atoms-rest (cdr atoms)))
-                        (let ((pp (evalare p env)))
-                          (let ((qq (evalare q env)))
+                        (let ((pp (evaluate-unquoted p env)))
+                          (let ((qq (evaluate-unquoted q env)))
                             (let ((env* (unify pp qq env)))
                               (if env*
                                   (loop (set-rest W) ΔE)
@@ -276,25 +276,25 @@
                   (printf "~a: about to match ~a with ~a\n\n" name (cadr atoms) env)
                   (loop (set-add (set-rest W) (cons (cdr atoms) env)) ΔE))
                 ((vector '∈1 x index l) ; for all (x, i) in l
-                  (let ((d-lst (evalare2 l env)))
+                  (let ((d-lst (evaluate l env)))
                     (let ((atoms-rest (cdr atoms)))
                       (loop (for/fold ((W (set-rest W))) ((el d-lst) (i (in-naturals)))
                                           (set-add W (cons atoms-rest (hash-set (hash-set env index i) x el))))
                                         ΔE))))
                 ((vector '∈3 x index l) ; select x at index in l
-                  (let ((d-index (evalare2 index env)))
-                    (let ((d-lst (evalare2 l env)))
+                  (let ((d-index (evaluate index env)))
+                    (let ((d-lst (evaluate l env)))
                       (let ((atoms-rest (cdr atoms)))
                           (if (or (null? d-lst) (>= d-index (length d-lst)))
                               (loop (set-rest W) ΔE)
                               (loop (set-add (set-rest W) (cons atoms-rest (hash-set env x (list-ref d-lst d-index)))) ΔE))))))
                 ((vector '∈5 x index l) ; index of x in l
-                  (let ((d-x (evalare2 index env)))
-                    (let ((d-lst (evalare2 l env)))
+                  (let ((d-x (evaluate index env)))
+                    (let ((d-lst (evaluate l env)))
                       (let ((atoms-rest (cdr atoms)))
                         (loop (set-add (set-rest W) (cons atoms-rest (hash-set env index (index-of d-lst d-x)))) ΔE))))) ; only finds first index
                 ((vector '∈1 x l) ; for all x in l
-                  (let ((d-lst (evalare2 l env)))
+                  (let ((d-lst (evaluate l env)))
                     (let ((atoms-rest (cdr atoms)))
                       (if (null? d-lst)
                           (loop (set-rest W) ΔE)
@@ -303,8 +303,8 @@
                             ΔE)))))
                 ((vector '= p q)
                   (let ((atoms-rest (cdr atoms)))
-                    (let ((pp (evalare p env)))
-                      (let ((qq (evalare q env)))
+                    (let ((pp (evaluate-unquoted p env)))
+                      (let ((qq (evaluate-unquoted q env)))
                         (let ((env* (unify pp qq env)))
                         (if env*
                             (loop (set-add (set-rest W) (cons atoms-rest env*)) ΔE)
