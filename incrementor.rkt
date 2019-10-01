@@ -176,6 +176,7 @@
                             r))))
         S))
 
+; Evaluate unquoted expressions in a given environment. Expressions that are not unquoted are not evaluated.
 (define (evaluate-unquoted x env)
   (match x
     ((cons 'unquote y) (evaluate (car y) env))
