@@ -1,6 +1,7 @@
 #lang racket
 (provide (all-defined-out))
 
+; Types of AST nodes.
 (struct «lit» (l v) #:transparent)
 (struct «id» (l x) #:transparent)
 (struct «quo» (l e) #:transparent)
@@ -19,6 +20,8 @@
 (struct «vector-set!» (l x ae1 ae2) #:transparent)
 (struct «make-vector» (l ae1 ae2) #:transparent)
 
+; Retrieves the label l of an AST node e.
+; This tag is unique for each node (see make-compiler).
 (define (ast-label e)
   (match e
     ((«id» l _) l)
@@ -42,63 +45,77 @@
 
 
 (define (make-compiler)
-  (define l -1)
-  (define (tag!)
+  ; Last used tag for AST nodes.
+  (define l -1)         
+  ; Move to the next tag and return this.
+  (define (tag!)        
     (set! l (add1 l))
     l)
-  (define (compile2 e)
+  ; Compiles an expression into AST nodes.  
+  (define (compile e)
     (match e
-      ((? symbol? v) («id» (tag!) (symbol->string v)))
+
+      ; Values
+      ((? symbol?  v) («id» (tag!) (symbol->string v)))
       ((? boolean? v) («lit» (tag!) v))
-      ((? number? v) («lit» (tag!) v))
-      ((? string? v)(«lit» (tag!) v))
-      ((? char? v) («lit» (tag!) v))
-      ((? null? v) '())
+      ((? number?  v) («lit» (tag!) v))
+      ((? string?  v) («lit» (tag!) v))
+      ((? char?    v) («lit» (tag!) v))
+      ((? null?    v) '())
+
+      ; Complex expressions & special forms
       (`(quote ,e) (compile-quote e))
-      (`(lambda ,x ,e) («lam» (tag!) (compile-params x) (compile2 e)))
-      (`(if ,ae ,e1 ,e2) («if» (tag!) (compile2 ae) (compile2 e1) (compile2 e2)))
-      (`(let ((,x ,e0)) ,e1) («let» (tag!) (compile2 x) (compile2 e0) (compile2 e1)))
-      (`(letrec ((,x ,e0)) ,e1) («letrec» (tag!) (compile2 x) (compile2 e0) (compile2 e1)))
-      (`(set! ,x ,ae) («set!» (tag!) (compile2 x) (compile2 ae)))
-      (`(car ,x) («car» (tag!) (compile2 x)))
-      (`(cdr ,x) («cdr» (tag!) (compile2 x)))
-      (`(cons ,ae1 ,ae2) («cons» (tag!) (compile2 ae1) (compile2 ae2)))
-      (`(set-car! ,x ,ae) («set-car!» (tag!) (compile2 x) (compile2 ae)))
-      (`(set-cdr! ,x ,ae) («set-cdr!» (tag!) (compile2 x) (compile2 ae)))        
-      (`(vector-ref ,x ,ae) («vector-ref» (tag!) (compile2 x) (compile2 ae)))
-      (`(vector-set! ,x ,ae1 ,ae2) («vector-set!» (tag!) (compile2 x) (compile2 ae1) (compile2 ae2)))
-      (`(make-vector ,ae1 ,ae2) («make-vector» (tag!) (compile2 ae1) (compile2 ae2)))
-      (`(,rator . ,rands) («app» (tag!) (compile2 rator) (map compile2 rands)))
-      ((? «id»?) e)
-      ((? «lam»?) e)
-      ((? «let»?) e)
+      (`(lambda ,x ,e)              («lam»          (tag!) (compile-params x) (compile e)))
+      (`(if ,ae ,e1 ,e2)            («if»           (tag!) (compile ae) (compile e1) (compile e2)))
+      (`(let ((,x ,e0)) ,e1)        («let»          (tag!) (compile x) (compile e0) (compile e1)))
+      (`(letrec ((,x ,e0)) ,e1)     («letrec»       (tag!) (compile x) (compile e0) (compile e1)))
+      (`(set! ,x ,ae)               («set!»         (tag!) (compile x) (compile ae)))
+      (`(car ,x)                    («car»          (tag!) (compile x)))
+      (`(cdr ,x)                    («cdr»          (tag!) (compile x)))
+      (`(cons ,ae1 ,ae2)            («cons»         (tag!) (compile ae1) (compile ae2)))
+      (`(set-car! ,x ,ae)           («set-car!»     (tag!) (compile x) (compile ae)))
+      (`(set-cdr! ,x ,ae)           («set-cdr!»     (tag!) (compile x) (compile ae)))        
+      (`(vector-ref ,x ,ae)         («vector-ref»   (tag!) (compile x) (compile ae)))
+      (`(vector-set! ,x ,ae1 ,ae2)  («vector-set!»  (tag!) (compile x) (compile ae1) (compile ae2)))
+      (`(make-vector ,ae1 ,ae2)     («make-vector»  (tag!) (compile ae1) (compile ae2)))
+      (`(,rator . ,rands)           («app»          (tag!) (compile rator) (map compile rands)))
+
+      ; Other?
+      ((? «id»?)     e)
+      ((? «lam»?)    e)
+      ((? «let»?)    e)
       ((? «letrec»?) e)
-      ((? «if»?) e)
-      ((? «set!»?) e)
-      ((? «quo»?) e)
-      ((? «app»?) e)
-      ((? «lit»?) e)
+      ((? «if»?)     e)
+      ((? «set!»?)   e)
+      ((? «quo»?)    e)
+      ((? «app»?)    e)
+      ((? «lit»?)    e)
       (_ (error "compile: cannot handle expression" e))))
+  ; Compiles a quoted expression e. If the expression represents a list, this list is built.
+  ; If the expression is a symbol, a literal is returned. Otherwise, the expression is just compiled.
   (define (compile-quote e)
     (match e
       ((cons e-car e-cdr) («cons» (tag!) (compile-quote e-car) (compile-quote e-cdr)))
       ('() («lit» (tag!) e))
       ((? symbol? x) («lit» (tag!) x))
-      (_ (compile2 e))))
+      (_ (compile e))))
+  ; Compiles the parameters of a lambda expression.
   (define (compile-params es)
     (match es
-      ((cons e-car e-cdr) (cons (compile2 e-car) (compile-params e-cdr)))
-      (_ (compile2 es))))
-  compile2)
-         
+      ((cons e-car e-cdr) (cons (compile e-car) (compile-params e-cdr)))
+      (_ (compile es))))
+  compile)
+
+; Atomic expressions are literals, identifiers (variables), lambdas and quoted expressions.         
 (define (ae? e)
   (match e
-    ((«lit» _ _) #t)
-    ((«id» _ _) #t)
+    ((«lit» _ _)   #t)
+    ((«id» _ _)    #t)
     ((«lam» _ _ _) #t)
-    ((«quo» _ e) (not (pair? e))) 
-    (_ #f)))
+    ((«quo» _ e)   (not (pair? e))) 
+    (_             #f)))
 
+; Retrieves the children of an AST node.
 (define (children e)
   (match e
     ((«id» _ _) (set))

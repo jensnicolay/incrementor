@@ -1,2 +1,4 @@
 compiled/*
 .vscode/*
+.DS_Store
+tasks.json
