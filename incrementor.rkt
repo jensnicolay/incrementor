@@ -17,6 +17,7 @@
 (struct rule (head body) #:transparent)
 
 ; An atom is structured as follows: Vect{ name | arg1 | arg2 | ... | argn }.
+; A 'tuple' is a ground atom, i.e., an atom with only constants as args
 
 (define (atom-name a)
   (vector-ref a 0))
@@ -189,34 +190,38 @@
           (apply operator operands)))
     (else x)))
 
-(define (unify xxx y env) ; x = rule, y = fact
-  ;(printf "unify ~a ~a ~a\n" xxx y env)
-  (let ((x (evaluate-unquoted xxx env)))
-    ;(printf "eval ~a ~a\n" xxx x)
+(define (unify-atoms atom tuple env)
+  (if (and (eq? (atom-name atom) (atom-name tuple)) (= (atom-arity atom) (atom-arity tuple)))
+      (let term-loop ((i 1) (env env)) ; Check unifiability for all argument terms of the atom.
+        (if (= i (vector-length atom))
+            env
+            (let ((xx (vector-ref atom i)))
+              (let ((yy (vector-ref tuple i)))
+                (let ((env* (unify-terms xx yy env)))
+                  (if env*
+                      (term-loop (add1 i) env*)
+                      #f))))))
+      #f))
+
+(define (unify-terms xx yy env) ; yy must be grounded
+  ;(printf "unify ~a with ~a in ~a\n" xxx y env)
+  (let ((x (evaluate-unquoted xx env)))
     (cond
-      ((and (atom? x) (atom? y) (eq? (atom-name x) (atom-name y)) (= (atom-arity x) (atom-arity y)))
-        (let term-loop ((i 1) (env env)) ; Check unifiability for all argument terms of the atom.
-          (if (= i (vector-length x))
-              env
-              (let ((xx (vector-ref x i)))
-                (let ((yy (vector-ref y i)))
-                  (let ((env* (unify xx yy env)))
-                    (if env*
-                        (term-loop (add1 i) env*)
-                        #f)))))))
-      ((eq? x '_) env)
+      ((and (atom? x) (atom? yy))
+        (unify-atoms x yy env))
+      ((eq? x '_) env) ; wildcard: always unifies without side effect on env
       ((symbol? x)
         (if (hash-has-key? env x)
               (let ((existing-value (hash-ref env x)))
-                  (if (equal? existing-value y)
+                  (if (equal? existing-value yy)
                       env
                       #f))
-              (hash-set env x y)))
+              (hash-set env x yy)))
       ((and (pair? x) (eq? (car x) 'quote))
-        (if (eq? (cadr x) y)
+        (if (eq? (cadr x) yy)
             env
             #f))
-      ((equal? x y)
+      ((equal? x yy)
         env)
       (else #f))))
 
@@ -255,7 +260,7 @@
                       (let ((atoms-rest (cdr atoms)))
                         (let ((pp (evaluate-unquoted p env)))
                           (let ((qq (evaluate-unquoted q env)))
-                            (let ((env* (unify pp qq env)))
+                            (let ((env* (unify-terms pp qq env)))
                               (if env*
                                   (loop (set-rest W) ΔE)
                                   (loop (set-add (set-rest W) (cons (cdr atoms) env)) ΔE)))))))
@@ -264,7 +269,7 @@
                         (if (set-empty? E)
                             (loop (set-add (set-rest W) (cons (cdr atoms) env)) ΔE)
                             (let ((ev (set-first E)))
-                              (let ((env* (unify av ev env)))
+                              (let ((env* (unify-atoms av ev env)))
                                 ;(printf "¬ unify result ~a ~a: ~v\n" av ev m)
                                 (if env*
                                     (loop (set-rest W) ΔE)
@@ -302,7 +307,7 @@
                   (let ((atoms-rest (cdr atoms)))
                     (let ((pp (evaluate-unquoted p env)))
                       (let ((qq (evaluate-unquoted q env)))
-                        (let ((env* (unify pp qq env)))
+                        (let ((env* (unify-terms pp qq env)))
                         (if env*
                             (loop (set-add (set-rest W) (cons atoms-rest env*)) ΔE)
                             (loop (set-rest W) ΔE)))))))
@@ -319,7 +324,7 @@
     (if (set-empty? E)
         W
         (let ((ev (set-first E)))
-          (let ((env* (unify av ev env)))
+          (let ((env* (unify-atoms av ev env)))
             ;(when m (printf "unify result: ~v\n" m))
             (if env*
                 (e-loop (set-rest E) (set-add W (cons remaining-preds env*)))
