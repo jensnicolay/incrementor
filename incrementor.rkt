@@ -14,7 +14,7 @@
 (define ns (make-base-namespace))
 
 (struct ¬ (p) #:transparent)
-(struct ← (p) #:transparent)
+(struct rule (head body) #:transparent)
 
 ; An atom is structured as follows: Vect{ name | arg1 | arg2 | ... | argn }.
 
@@ -32,12 +32,8 @@
 ; A rule consists out of a head and a body, the latter again consisting out of an arbitrary number of atoms.
 
 (define (:- head . body)
-  (cons head body))
+  (rule head body))
   
-(define rule-head car)
-
-(define rule-body cdr)
-
 (struct ledge (to label) #:transparent)
 
 (define (lsuccessors G n)
@@ -56,8 +52,8 @@
 
 (define (precedence-lgraph P)
   (for/fold ((G (hash))) ((r (in-set P)))
-    (let ((head (atom-name (car r))))
-      (for/fold ((G (hash-set G head (hash-ref G head (set))))) ((p (in-list (cdr r))))
+    (let ((head (atom-name (rule-head r))))
+      (for/fold ((G (hash-set G head (hash-ref G head (set))))) ((p (in-list (rule-body r))))
         (match p
           ((¬ n)
             (let ((dep (atom-name n)))
@@ -172,7 +168,7 @@
 
   (map (lambda (Preds)
           (for/fold ((R (set))) ((Pred (in-set Preds)))
-            (set-union R (for/set ((r (in-set P)) #:when (eq? (atom-name (car r)) Pred)) ; why not lists for "set" of rules?
+            (set-union R (for/set ((r (in-set P)) #:when (eq? (atom-name (rule-head r)) Pred)) ; why not lists for "set" of rules?
                             r))))
         S))
 
@@ -241,14 +237,14 @@
 
 (define (fire rule E delta-tuples)
   ;(printf "fire rule ~v E ~v\n" rule E)
-  (let loop ((W (set (cons (cdr rule) (hash)))) (ΔE (set)))
+  (let loop ((W (set (cons (rule-body rule) (hash)))) (ΔE (set)))
     ;(printf "loop ~v\n" W)
     (if (set-empty? W)
         ΔE
         (match-let (((cons atoms env) (set-first W)))
         ;(printf "looking at atoms ~v in ~v\n" atoms env)
         (if (null? atoms)
-            (let ((hv (car rule)))
+            (let ((hv (rule-head rule)))
               (let ((new-fact (bind-fact hv env)))
                 (loop (set-rest W) (set-add ΔE new-fact))))
             (let ((av (car atoms)))
@@ -374,14 +370,13 @@
   (let ((idb-preds (for/set ((rule (in-set rules)))
                       (atom-name (rule-head rule))))) ; this corresponds to Strata?
 
-  (define (rewrite-rule rule)
-    (let ((head (rule-head rule))
-          (body (rule-body rule)))
+  (define (rewrite-rule r)
+    (match-let (((rule head body) r))
       
     (define (rewrite-terms previous-terms future-terms rewrites)
       (if (null? future-terms)
           (if (set-empty? rewrites)
-              (set rule)
+              (set r)
               rewrites)
           (let ((term (car future-terms)))
             (match term
@@ -390,7 +385,7 @@
               (_
                 (let ((name (atom-name term)))
                   (if (set-member? idb-preds name)
-                      (rewrite-terms (cons term previous-terms) (cdr future-terms) (set-add rewrites (cons head (append (reverse previous-terms) (list `#(*Recent* ,term)) (cdr future-terms)))))
+                      (rewrite-terms (cons term previous-terms) (cdr future-terms) (set-add rewrites (rule head (append (reverse previous-terms) (list `#(*Recent* ,term)) (cdr future-terms)))))
                       (rewrite-terms (cons term previous-terms) (cdr future-terms) rewrites))))))))
 
     ; (define (rewrite-term term previous-terms future-terms)
@@ -398,15 +393,15 @@
     
     (rewrite-terms '() body (set))))
 
-    (for/fold ((rewritten-rules (set))) ((rule (in-set rules)))
-      (let ((rewrites (rewrite-rule rule)))
+    (for/fold ((rewritten-rules (set))) ((r (in-set rules)))
+      (let ((rewrites (rewrite-rule r)))
         (set-union rewritten-rules rewrites)))))
 
 
 (define (perform-iter rules tuples)
 
   (define semi-naive-rules (rewrite-semi-naive rules))
-  ;(printf "semi-naive rules: ~a\ntuples: ~a\n" semi-naive-rules tuples)
+  (printf "semi-naive rules: ~a\ntuples: ~a\n" semi-naive-rules tuples)
   (define pred-name-to-rules
     (for/fold ((R (hash))) ((snr (in-set semi-naive-rules)))
       (for/fold ((R R)) ((term (in-list (rule-body snr))))
