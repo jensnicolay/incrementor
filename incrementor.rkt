@@ -272,25 +272,13 @@
                 ((vector 'DEBUG name)
                   (printf "~a: about to match ~a with ~a\n\n" name (cadr atoms) env)
                   (loop (set-add (set-rest W) (cons (cdr atoms) env)) ΔE))
-                ((vector '∈1 x index l) ; for all (x, i) in l
+                ((vector '%for-all x index l) ; for all (x, i) in l
                   (let ((d-lst (evaluate l env)))
                     (let ((atoms-rest (cdr atoms)))
                       (loop (for/fold ((W (set-rest W))) ((el d-lst) (i (in-naturals)))
                                           (set-add W (cons atoms-rest (hash-set (hash-set env index i) x el))))
                                         ΔE))))
-                ((vector '∈3 x index l) ; select x at index in l
-                  (let ((d-index (evaluate index env)))
-                    (let ((d-lst (evaluate l env)))
-                      (let ((atoms-rest (cdr atoms)))
-                          (if (or (null? d-lst) (>= d-index (length d-lst)))
-                              (loop (set-rest W) ΔE)
-                              (loop (set-add (set-rest W) (cons atoms-rest (hash-set env x (list-ref d-lst d-index)))) ΔE))))))
-                ((vector '∈5 x index l) ; index of x in l
-                  (let ((d-x (evaluate index env)))
-                    (let ((d-lst (evaluate l env)))
-                      (let ((atoms-rest (cdr atoms)))
-                        (loop (set-add (set-rest W) (cons atoms-rest (hash-set env index (index-of d-lst d-x)))) ΔE))))) ; only finds first index
-                ((vector '∈1 x l) ; for all x in l
+                ((vector '%for-all x l) ; for all x in l
                   (let ((d-lst (evaluate l env)))
                     (let ((atoms-rest (cdr atoms)))
                       (if (null? d-lst)
@@ -298,6 +286,18 @@
                           (loop (for/fold ((W (set-rest W))) ((el d-lst))
                             (set-add W (cons atoms-rest (hash-set env x el))))
                             ΔE)))))
+                ((vector '%select x index l) ; select x at index in l
+                  (let ((d-index (evaluate index env)))
+                    (let ((d-lst (evaluate l env)))
+                      (let ((atoms-rest (cdr atoms)))
+                          (if (or (null? d-lst) (>= d-index (length d-lst)))
+                              (loop (set-rest W) ΔE)
+                              (loop (set-add (set-rest W) (cons atoms-rest (hash-set env x (list-ref d-lst d-index)))) ΔE))))))
+                ((vector '%index-of x index l) ; index of x in l
+                  (let ((d-x (evaluate index env)))
+                    (let ((d-lst (evaluate l env)))
+                      (let ((atoms-rest (cdr atoms)))
+                        (loop (set-add (set-rest W) (cons atoms-rest (hash-set env index (index-of d-lst d-x)))) ΔE))))) ; only finds first index
                 ((vector '= p q)
                   (let ((atoms-rest (cdr atoms)))
                     (let ((pp (evaluate-unquoted p env)))
@@ -343,7 +343,7 @@
     (if (null? S)
         E
         (let ((Pi (car S)))
-          (printf "Pi: ~v\n" (list->set (set-map Pi (lambda (r) (atom-name (car r))))))
+          (printf "Pi: ~v\n" (list->set (set-map Pi (lambda (r) (atom-name (rule-head r))))))
           (let intra-loop ((E-intra E))
             (let ((tuples (solve-naive-helper Pi E-intra)))
               (let ((E-intra* (set-union E-intra tuples)))

@@ -51,10 +51,10 @@
   (#(Parent e p) . :- . #(Letrec p e _ _)) ;;
   (#(Parent e p) . :- . #(Letrec p _ e _))
   (#(Parent e p) . :- . #(Letrec p _ _ e))
-  (#(Parent e p) . :- . #(Lam p e-params _) #(∈1 e e-params))
+  (#(Parent e p) . :- . #(Lam p e-params _) #(%for-all e e-params))
   (#(Parent e p) . :- . #(Lam p _ e))
   (#(Parent e p) . :- . #(App p e _))
-  (#(Parent e p) . :- . #(App p _ e-rands) #(∈1 e e-rands))
+  (#(Parent e p) . :- . #(App p _ e-rands) #(%for-all e e-rands))
   (#(Parent e p) . :- . #(If p e _ _))
   (#(Parent e p) . :- . #(If p _ e _))
   (#(Parent e p) . :- . #(If p _ _ e))
@@ -82,13 +82,13 @@
   (#(Cont e-else κ e‘ κ‘) . :- . #(If p _ _ e-else) #(Parent e-then p) #(Reachable e-then κ) #(Cont p κ e‘ κ‘))
   (#(Cont e-body κ e‘ κ‘) . :- . #(Lam p _ e-body) #(Parent e-body p) #(Step e-call κ-call e-body κ) #(Cont e-call κ-call e‘ κ‘))
 
-  (#(Binds e x) . :- . #(Lam e e-params _) #(∈1 e-param e-params) #(Id e-param x))
+  (#(Binds e x) . :- . #(Lam e e-params _) #(%for-all e-param e-params) #(Id e-param x))
 
   (#(Evaluated e e κ) . :- . #(Lit e _) #(Reachable e κ))
   (#(Evaluated e e κ) . :- . #(Id e _) #(Reachable e κ))
   (#(Evaluated e e κ) . :- . #(Lam e _ _) #(Reachable e κ))
   (#(Evaluated e-rator e κ) . :- .  #(App e e-rator _) #(Reachable e κ))
-  (#(Evaluated e-rand e κ) . :- . #(App e _ e-rands) #(∈1 e-rand e-rands) #(Reachable e κ))
+  (#(Evaluated e-rand e κ) . :- . #(App e _ e-rands) #(%for-all e-rand e-rands) #(Reachable e κ))
   (#(Evaluated e-cond e κ) . :- . #(If e e-cond _ _) #(Reachable e κ))
 
   (#(Lookup-root x e-body κ #(root e-init e-init κ)) . :- . #(Let e e-id e-init e-body) #(Id e-id x) #(Reachable e κ))
@@ -102,7 +102,7 @@
   (#(Lookup-root x e-then κ r) . :- . #(Lookup-root x p κ r) #(If p _ e-then _))
   (#(Lookup-root x e-else κ r) . :- . #(Lookup-root x p κ r) #(If p _ _ e-else))
   (#(Lookup-root x e-body κ‘ #(root e-rand e κ)) . :- . #(App e e-rator e-rands) #(Lam e-lam e-params e-body)
-                                                         #(∈1 e-param i e-params) #(Id e-param x) #(∈3 e-rand i e-rands) #(Step e κ e-body κ‘))
+                                                         #(%for-all e-param i e-params) #(Id e-param x) #(%select e-rand i e-rands) #(Step e κ e-body κ‘))
   (#(Lookup-root x e-body κ‘ r) . :- . #(App e e-rator _) #(Geval e-rator e κ #(obj e-lam e-obj κ-obj))
                                         #(Lookup-root x e-obj κ-obj r) (¬ #(Binds e-lam x)) #(Step e κ e-body κ‘))
   (#(Lookup-root "+" e κ #f) . :- . #(Root e) #(Reachable e κ))
@@ -119,7 +119,7 @@
   (#(Geval e e κ d) . :- . #(Letrec e _ _ e-body) #(Reachable e κ) #(Geval e-body e-body κ d))
   (#(Geval e e κ d) . :- . #(App e _ _) #(Step e κ e-body κ‘) #(Lam _ _ e-body) #(Geval e-body e-body κ‘ d))
   (#(Geval e e κ d) . :- . #(App e e-rator e-rands) #(Reachable e κ) 
-                            #(Geval e-rator e κ #(prim proc)) #(∈3 e1 0 e-rands) #(Geval e1 e κ d1) #(∈3 e2 1 e-rands) #(Geval e2 e κ d2) #(= d ,(proc d1 d2)))
+                            #(Geval e-rator e κ #(prim proc)) #(%select e1 0 e-rands) #(Geval e1 e κ d1) #(%select e2 1 e-rands) #(Geval e2 e κ d2) #(= d ,(proc d1 d2)))
   (#(Geval e e κ d) . :- . #(If e _ _ _) #(Step e κ e-thenelse κ) #(Geval e-body e-thenelse κ d))
   
   (#(Final e κ) . :- . #(Reachable e κ) (¬ #(Step e κ e‘ κ‘)))

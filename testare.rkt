@@ -6,7 +6,7 @@
   
   (#(R1 d) . :- . #(X l) #(= d1 ,(list-ref l 0)) #(= d2 ,(list-ref l 1)) #(= d ,(+ d1 d2)))
   
-  (#(R2 d) . :- . #(X l) #(∈3 d1 0 l) #(∈3 d2 1 l) #(= d ,(+ d1 d2))) ; select
+  (#(R2 d) . :- . #(X l) #(%select d1 0 l) #(%select d2 1 l) #(= d ,(+ d1 d2)))
 
   (#(R3 'ok) . :- . #(X3 d) (¬ #(= d #f)))
 
