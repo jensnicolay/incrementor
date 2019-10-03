@@ -15,6 +15,13 @@
 
   (#(R5) . :- . #(X4 d) (¬ #(= d #f)))
 
+  (#(R6 'ok) . :- . #(= ,(* 2 2) ,(+ 2 2)))
+  (#(R6b 'ok) . :- . #(= ,(* 3 3) ,(+ 3 3)))
+
+  (#(R7 d) . :- . #(X l) #(%index-of 3 d l))
+  (#(R7b d) . :- . #(X l) #(%index-of ,(+ 1 2) d l))
+
+
 ))
 
 (define E (set #(X (5 3)) #(X3 123) #(X4 #f)))
@@ -42,3 +49,7 @@
 (test S 'R4 'ok)
 (test S 'R4b 'ok)
 (test-fail S 'R5)
+(test S 'R6 'ok)
+(test-fail S 'R6b)
+(test S 'R7 1)
+(test S 'R7b 1)
