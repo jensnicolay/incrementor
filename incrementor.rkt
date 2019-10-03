@@ -178,22 +178,22 @@
                             r))))
         S))
 
-; Evaluate unquoted eredpressions in a given environment. Eredpressions that are not unquoted are not evaluated.
-(define (evaluate-unquoted red env)
-  (match red
+; Evaluate unquoted expressions in a given environment. Expressions that are not unquoted are not evaluated.
+(define (evaluate-unquoted x env)
+  (match x
     ((cons 'unquote y) (evaluate (car y) env))
-    (_ red)))
+    (_ x)))
 
-; Evaluate red in a given environment of bindings.
-(define (evaluate red env)
-  ;(printf "evaluate-unquoted ~a\n" red)
+; Evaluate x in a given environment of bindings.
+(define (evaluate x env)
+  ;(printf "evaluate-unquoted ~a\n" x)
   (cond
-    ((symbol? red) (hash-ref env red (lambda () (eval red ns)))) ; Look up symbols in the given environment.
-    ((list? red)
-      (let ((operator (evaluate (car red) env))
-            (operands (map (lambda (operand) (evaluate operand env)) (cdr red))))
+    ((symbol? x) (hash-ref env x (lambda () (eval x ns)))) ; Look up symbols in the given environment.
+    ((list? x)
+      (let ((operator (evaluate (car x) env))
+            (operands (map (lambda (operand) (evaluate operand env)) (cdr x))))
         (apply operator operands)))
-    (else red)))
+    (else x)))
 
 ; Tries to unify an atom to a given pattern (also an atom). Requires atom and pattern to be atoms. Returns an eredtended environment or #f if unification fails.
 (define (unify-atoms atom pattern env) ; TODO which is the pattern?
@@ -211,7 +211,7 @@
 
 ; Tries to unify a term to a given pattern. The pattern must be grounded but may contain wildcards (_). Returns an eredtended environment or #f if unification fails.
 (define (unify-terms term pattern env) ; pattern must be grounded
-  ;(printf "unify ~a with ~a in ~a\n" termred y env)
+  ;(printf "unify ~a with ~a in ~a\n" term y env)
   (let ((red (evaluate-unquoted term env))) ; Reduce the term if needed.
     (cond
       ((and (atom? red) (atom? pattern)) (unify-atoms red pattern env))
