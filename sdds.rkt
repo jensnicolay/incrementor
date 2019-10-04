@@ -35,16 +35,21 @@
             (loop (set-union (set-rest W) (set e-rator) (list->set e-rands)) (set-add E `#(App ,l ,(ast-label e-rator) ,(map ast-label e-rands)))))
           (_ (error "ast->facts: cannot handle expression" e))))))
 
+; Set of evaluation rules for Scheme, expressed as Datalog relations.
 (define P (set
 
-  (#(Ast e) . :- . #(Lit e _))
-  (#(Ast e) . :- . #(Id e _))
-  (#(Ast e) . :- . #(Lam e _ _))
-  (#(Ast e) . :- . #(Let e _ _ _))
-  (#(Ast e) . :- . #(Letrec e _ _ _))
-  (#(Ast e) . :- . #(If e _ _ _))
-  (#(Ast e) . :- . #(App e _ _))
+  ; Ast/1 succeeds when its argument is a node in the ast. e is the label (l) corresponding to this node.
+  ; Let and Letrec are limited to binding a single variable.
+  (#(Ast e) . :- . #(Lit e _))          ; Literal     <label, value>
+  (#(Ast e) . :- . #(Id e _))           ; Identifier  <label, identifier>
+  (#(Ast e) . :- . #(Lam e _ _))        ; Lambda      <label, [parameter,...],      body>
+  (#(Ast e) . :- . #(Let e _ _ _))      ; Let         <label, variable, expression, body>
+  (#(Ast e) . :- . #(Letrec e _ _ _))   ; Letrec      <label, variable, expression, body>
+  (#(Ast e) . :- . #(If e _ _ _))       ; If          <label, condition, then, else>
+  (#(Ast e) . :- . #(App e _ _))        ; Application <label, operator, operand>
 
+  ; Parent/2 succeeds when both arguments represent (labels of) nodes in the AST and 
+  ; the node represented by the second argument is the parent of the node represented by the first argument.
   (#(Parent e p) . :- . #(Let p e _ _)) ;;
   (#(Parent e p) . :- . #(Let p _ e _))
   (#(Parent e p) . :- . #(Let p _ _ e))
@@ -59,8 +64,11 @@
   (#(Parent e p) . :- . #(If p _ e _))
   (#(Parent e p) . :- . #(If p _ _ e))
 
+  ; Root/1 succeeds if its argument is the root node of the ast, i.e., a node without a parent.
   (#(Root e) . :- . #(Ast e) (¬ #(Parent e _)))
 
+  ; Reachable/2 succeeds when its first argument is the root node of the AST or when there exists is an expression
+  ; that is reachable from the root node and steps to the expression in the first argument.
   (#(Reachable e 0) . :- . #(Root e))
   (#(Reachable e‘ κ‘) . :- . #(Reachable e κ) #(Step e κ e‘ κ‘))
   
@@ -122,8 +130,10 @@
                             #(Geval e-rator e κ #(prim proc)) #(%select e1 0 e-rands) #(Geval e1 e κ d1) #(%select e2 1 e-rands) #(Geval e2 e κ d2) #(= d ,(proc d1 d2)))
   (#(Geval e e κ d) . :- . #(If e _ _ _) #(Step e κ e-thenelse κ) #(Geval e-body e-thenelse κ d))
   
+  ; Final/2 succeeds when its first argument is an expression that cannot be evaluated further, i.e., which cannot be stepped anymore.
   (#(Final e κ) . :- . #(Reachable e κ) (¬ #(Step e κ e‘ κ‘)))
 
+  ; Eval/2 succeeds when its first argument can be evaluated to a result, which is/should be its second argument.
   (#(Eval e d) . :- . #(Final e κ) #(Geval e e κ d))  
 ))
 
