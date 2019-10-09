@@ -1,6 +1,8 @@
 #lang racket
 
-(require "incrementor.rkt")
+(require "datalog.rkt")
+(require "naive.rkt")
+(require "semi-naive.rkt")
 
 (define r1 (:- #(Reachable x y)    #(Link x y)))
 (define r2 (:- #(Reachable x y)    #(Link x z) #(Reachable z y)))

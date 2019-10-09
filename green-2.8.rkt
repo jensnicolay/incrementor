@@ -1,6 +1,8 @@
 #lang racket
 
-(require "incrementor.rkt")
+(require "datalog.rkt")
+(require "naive.rkt")
+(require "semi-naive.rkt")
 
 (define r1 (:- #(Reachable x y)   #(Link x y)))
 (define r2 (:- #(Reachable x y)   #(Link x z) #(Reachable z y)))
@@ -15,4 +17,4 @@
 
 ;(printf "~v\n" (fire r1 E))
 
-(printf "\nsolve ~a\n\n" (solve-semi-naive P E))
+(printf "\nsolve ~a\n\n" (solve-naive P E))

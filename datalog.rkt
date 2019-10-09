@@ -3,7 +3,8 @@
 (provide
     atom? atom-name atom-arity atom-term ¬
     rule rule-head rule-body :-
-    stratify fire-rule)
+    stratify fire-rule
+    solver-result solver-result-tuples)
 
 ; Terminology
 ; * Term: Constant or Variable
@@ -23,6 +24,8 @@
 
 (struct ¬ (p) #:transparent)
 (struct rule (head body) #:transparent)
+
+(struct solver-result (tuples duration num-derived-tuples) #:transparent)
 
 ; An atom is structured as follows: Vect{ name | arg1 | arg2 | ... | argn }.
 ; A 'tuple' is a ground atom, i.e., an atom with only constants as args
@@ -308,7 +311,7 @@
                               (loop (set-rest work) ΔE)
                               (loop (set-add (set-rest work) (cons atoms-rest (hash-set env x (list-ref d-lst d-index)))) ΔE))))))
                 ((vector '%index-of x index l) ; index of x in l
-                  (let ((d-x (evaluate index env)))
+                  (let ((d-x (evaluate x env)))
                     (let ((d-lst (evaluate l env)))
                       (let ((atoms-rest (cdr atoms)))
                         (loop (set-add (set-rest work) (cons atoms-rest (hash-set env index (index-of d-lst d-x)))) ΔE))))) ; only finds first index

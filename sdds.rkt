@@ -69,6 +69,12 @@
   ; Root/1 succeeds if its argument is the root node of the ast, i.e., a node without a parent.
   (#(Root e) . :- . #(Ast e) (¬ #(Parent e _)))
 
+  (:- `#(Prim "+" ,+))
+  (:- `#(Prim "-" ,-))
+  (:- `#(Prim "*" ,*))
+  (:- `#(Prim "=" ,=))
+  (:- `#(Prim "<" ,<))
+
   ; Reachable/2 succeeds when its first argument is the root node of the AST or when there exists is an expression
   ; that is reachable from the root node and steps to the expression in the first argument.
   (#(Reachable e 0) . :- . #(Root e))
@@ -139,8 +145,10 @@
   (#(Eval e d) . :- . #(Final e κ) #(Geval e e κ d))  
 ))
 
+(define num-derived-tuples 0)
 
 (define (test-rules e expected)
+
   (let ((result
             (with-handlers ((exn:fail?
                              (lambda (exc) (if (eq? expected 'FAIL)
@@ -153,9 +161,10 @@
            (error (format "wrong result for ~a:\n\texpected ~a\n\tgot      ~a" e expected result)))))
 
 (define (conc-eval e)
-  (let ((E (set-union (ast->tuples e) (set `#(Prim "+" ,+) `#(Prim "-" ,-) `#(Prim "*" ,*) `#(Prim "=" ,=) `#(Prim "<" ,<)))))
+  (let ((E (ast->tuples e)))
     (printf "~a\n" E)
-    (let ((tuples (solve-naive P E)))
+    (match-let (((solver-result tuples _ num-derived-tuples*) (solve-semi-naive P E)))
+      (set! num-derived-tuples (+ num-derived-tuples num-derived-tuples*))
       (unless (= 1 (length (sequence->list (sequence-filter (lambda (a) (eq? 'Root (atom-name a))) (in-set tuples)))))
         (error 'conc-eval "wrong number of Roots"))
       (let ((Eval (sequence->list (sequence-filter (lambda (a) (eq? 'Eval (atom-name a))) (in-set tuples)))))
@@ -244,4 +253,4 @@
 
 
 (define time-test-end (current-milliseconds))
-(printf "~a ms" (- time-test-end time-test-start))
+(printf "~a ms ~a tuples derived" (- time-test-end time-test-start) num-derived-tuples)
