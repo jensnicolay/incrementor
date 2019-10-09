@@ -1,7 +1,9 @@
 #lang racket
 
 (require "ast.rkt")
-(require "incrementor.rkt")
+(require "datalog.rkt")
+(require "naive.rkt")
+(require "semi-naive.rkt")
 
 (define (ast->tuples e)
   (let loop ((W (set e)) (E (set)))
@@ -153,7 +155,7 @@
 (define (conc-eval e)
   (let ((E (set-union (ast->tuples e) (set `#(Prim "+" ,+) `#(Prim "-" ,-) `#(Prim "*" ,*) `#(Prim "=" ,=) `#(Prim "<" ,<)))))
     (printf "~a\n" E)
-    (let ((tuples (solve-semi-naive P E)))
+    (let ((tuples (solve-naive P E)))
       (unless (= 1 (length (sequence->list (sequence-filter (lambda (a) (eq? 'Root (atom-name a))) (in-set tuples)))))
         (error 'conc-eval "wrong number of Roots"))
       (let ((Eval (sequence->list (sequence-filter (lambda (a) (eq? 'Eval (atom-name a))) (in-set tuples)))))

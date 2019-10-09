@@ -1,5 +1,10 @@
 #lang racket
 
+(provide
+    atom? atom-name atom-arity atom-term ¬
+    rule rule-head rule-body :-
+    stratify fire-rule)
+
 ; Terminology
 ; * Term: Constant or Variable
 ; * Atom: Predicate + list of terms
@@ -12,8 +17,6 @@
 ; Naming
 ; * P   the set of rules
 ; * E   the set of tuples
-
-(provide (all-defined-out))
 
 (random-seed 111)
 (define ns (make-base-namespace))
@@ -245,7 +248,7 @@
   (let ((new-fact (apply vector-immutable (cons (atom-name hv) terms))))
     new-fact)))
 
-(define (fire rule E delta-tuples)
+(define (fire-rule rule E delta-tuples)
   ;(printf "fire rule ~v E ~v\n" rule E)
   (let loop ((work (set (cons (rule-body rule) (hash)))) ; The predicates to be checked. Initially, the predicates in the rule body.
              (ΔE   (set)))
@@ -336,126 +339,6 @@
                 (e-loop (set-rest E) (set-add work-acc (cons remaining-preds env*)))
                 (e-loop (set-rest E) work-acc)))))))
 
-(define (solve-naive P E)
-
-  (define (solve-naive-helper rules tuples)
-    (let loop ((rules rules) (derived-tuples tuples))
-      (if (set-empty? rules) ; Check whether all rules have been traversed as far as needed.
-          derived-tuples
-          (let ((rule (set-first rules)))
-            (let ((derived-tuples-for-rule (fire rule derived-tuples (set)))) ; Fire the first rule.
-              (loop (set-rest rules) (set-union derived-tuples derived-tuples-for-rule))))))) ; Accumulate all derived tuples.
-
-  (define strata (stratify P))
-  ;(printf "stratify ~v\n\n" strata)
-
-  ; * E      set of tuples (initially only the ones in the database)
-  ; * strata list of strata
-  (let inter-loop ((E-inter E) (S strata))
-    (printf "\ninter ~a/~a with ~a tuples\n" (- (set-count strata) (set-count S)) (set-count strata) (set-count E-inter))
-    (if (null? S) ; Check whether there are more strata to traverse.
-        E-inter ; All tuples (initial and derived).
-        (let ((Pi (car S))) ; Rules in the first stratum.
-          (printf "Pi: ~v\n" (list->set (set-map Pi (lambda (r) (atom-name (rule-head r))))))
-          (let intra-loop ((E-intra E-inter))
-            (let ((tuples (solve-naive-helper Pi E-intra)))
-              (let ((E-intra* (set-union E-intra tuples)))
-                  (if (equal? E-intra E-intra*) ; monotonicity: size check quicker? (TODO)
-                      (inter-loop E-intra* (cdr S))
-                      (let ((new-tuples (set-subtract E-intra* E-intra)))
-                        (printf "new tuples: ~a\n" new-tuples)
-                        (intra-loop E-intra*))))))))))
-
-
-(define (solve-semi-naive P E)
-
-  (define strata (stratify P))
-
-  (let stratum-loop ((S strata) (E E))
-    (printf "\ninter ~a/~a with ~a tuples\n" (- (set-count strata) (set-count S)) (set-count strata) (set-count E))
-
-    (if (null? S)
-        E
-        (let ((E* (perform-iter (car S) E)))
-          (stratum-loop (cdr S) E*)))))
-
-(define (rewrite-semi-naive rules)
-  (let ((idb-preds (for/set ((rule (in-set rules)))
-                      (atom-name (rule-head rule))))) ; this corresponds to Strata?
-
-  (define (rewrite-rule r)
-    (match-let (((rule head body) r))
-      
-    (define (rewrite-terms previous-terms future-terms rewrites)
-      (if (null? future-terms)
-          (if (set-empty? rewrites)
-              (set r)
-              rewrites)
-          (let ((term (car future-terms)))
-            (match term
-              ((¬ p) ; in a stratified Datalog, all negated preds are guaranteed to be EDBs, so no action necessary
-                (rewrite-terms (cons term previous-terms) (cdr future-terms) rewrites))
-              (_
-                (let ((name (atom-name term)))
-                  (if (set-member? idb-preds name)
-                      (rewrite-terms (cons term previous-terms) (cdr future-terms) (set-add rewrites (rule head (append (reverse previous-terms) (list `#(*Recent* ,term)) (cdr future-terms)))))
-                      (rewrite-terms (cons term previous-terms) (cdr future-terms) rewrites))))))))
-
-    ; (define (rewrite-term term previous-terms future-terms)
-    ;   (cons head (append previous-terms (list `#(*Recent* ,term)) future-terms)))
-    
-    (rewrite-terms '() body (set))))
-
-    (for/fold ((rewritten-rules (set))) ((r (in-set rules)))
-      (let ((rewrites (rewrite-rule r)))
-        (set-union rewritten-rules rewrites)))))
-
-; in: rules
-; out: mapping pred -> rules with that pred in body
-(define (pred-to-rules rules)
-  (for/fold ((R (hash))) ((r (in-set rules)))
-    (for/fold ((R R)) ((term (in-list (rule-body r))))
-      (match term
-        ((¬ p)
-          (let ((term-name (atom-name p)))
-          (hash-set R term-name (set-add (hash-ref R term-name (set)) r)))) ; remember: no *Recent* possible!
-        (_ 
-          (let ((term-name (atom-name term)))
-            (if (equal? term-name '*Recent*)
-                (let ((recent-term (vector-ref term 1)))
-                  (let ((recent-name (atom-name recent-term)))
-                    (hash-set R recent-name (set-add (hash-ref R recent-name (set)) r))))
-                (hash-set R term-name (set-add (hash-ref R term-name (set)) r)))))
-        )))) ; always an EDB?
-
-; in: set of tuples and map of pred->rules
-; out: all rules that need to be fired (based on the preds in rules' body)
-(define (select-rules-for-tuples tuples p->r)
-  (for/fold ((R (set))) ((tuple (in-set tuples)))
-    (set-union R (hash-ref p->r (atom-name tuple) (set)))))
-
-
-(define (perform-iter rules tuples)
-
-  (define semi-naive-rules (rewrite-semi-naive rules))
-  (printf "semi-naive rules: ~a\ntuples: ~a\n" semi-naive-rules tuples)
-  (define p->r (pred-to-rules semi-naive-rules))
-  ;(printf "pred-to-rules ~a\n" p->r)
-  
-  (let rule-loop ((rules* semi-naive-rules) (tuples tuples) (previous-delta-tuples tuples) (delta-tuples (set)))
-    (let ((delta-rules (select-rules-for-tuples previous-delta-tuples p->r)))
-      ;(printf "delta rules :~a\n" delta-rules)
-      (let delta-rule-loop ((rules* delta-rules) (delta-tuples delta-tuples))
-        (if (set-empty? rules*)
-          (let ((real-delta-tuples (set-subtract delta-tuples tuples)))
-            (printf "delta-tuples ~a\nreal-delta-tuples ~a\n" delta-tuples real-delta-tuples)
-            (if (set-empty? real-delta-tuples)
-                tuples
-                (rule-loop semi-naive-rules (set-union tuples real-delta-tuples) real-delta-tuples (set))))
-          (let ((rule (set-first rules*)))
-            (let ((derived-tuples-for-rule (fire rule tuples previous-delta-tuples)))
-              ;(printf "fired ~a got ~a\n" rule derived-tuples-for-rule)
-              (delta-rule-loop (set-rest rules*) (set-union delta-tuples derived-tuples-for-rule)))))))))
 
 (module+ main
   123
