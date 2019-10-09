@@ -3,7 +3,7 @@
 (require "ast.rkt")
 (require "incrementor.rkt")
 
-(define (ast->facts e)
+(define (ast->tuples e)
   (let loop ((W (set e)) (E (set)))
     (if (set-empty? W)
         E
@@ -33,7 +33,7 @@
           ; ((«quo» _ _) (set))
           ((«app» l e-rator e-rands)
             (loop (set-union (set-rest W) (set e-rator) (list->set e-rands)) (set-add E `#(App ,l ,(ast-label e-rator) ,(map ast-label e-rands)))))
-          (_ (error "ast->facts: cannot handle expression" e))))))
+          (_ (error "ast->tuples: cannot handle expression" e))))))
 
 ; Set of evaluation rules for Scheme, expressed as Datalog relations.
 (define P (set
@@ -151,12 +151,12 @@
            (error (format "wrong result for ~a:\n\texpected ~a\n\tgot      ~a" e expected result)))))
 
 (define (conc-eval e)
-  (let ((E (set-union (ast->facts e) (set `#(Prim "+" ,+) `#(Prim "-" ,-) `#(Prim "*" ,*) `#(Prim "=" ,=) `#(Prim "<" ,<)))))
+  (let ((E (set-union (ast->tuples e) (set `#(Prim "+" ,+) `#(Prim "-" ,-) `#(Prim "*" ,*) `#(Prim "=" ,=) `#(Prim "<" ,<)))))
     (printf "~a\n" E)
-    (let ((facts (solve-semi-naive P E)))
-      (unless (= 1 (length (sequence->list (sequence-filter (lambda (a) (eq? 'Root (atom-name a))) (in-set facts)))))
+    (let ((tuples (solve-semi-naive P E)))
+      (unless (= 1 (length (sequence->list (sequence-filter (lambda (a) (eq? 'Root (atom-name a))) (in-set tuples)))))
         (error 'conc-eval "wrong number of Roots"))
-      (let ((Eval (sequence->list (sequence-filter (lambda (a) (eq? 'Eval (atom-name a))) (in-set facts)))))
+      (let ((Eval (sequence->list (sequence-filter (lambda (a) (eq? 'Eval (atom-name a))) (in-set tuples)))))
         (if (= (length Eval) 1)
             (vector-ref (car Eval) 2)
             (error 'conc-eval "wrong Eval result: ~a" Eval))))))
@@ -211,7 +211,7 @@
 
 (test-rules '(letrec ((f (lambda (x) (if x "done" (f #t))))) (f #f)) "done")
 (test-rules '(letrec ((f (lambda (x) (let ((v (= x 2))) (if v x (let ((u (+ x 1))) (f u))))))) (f 0)) 2)
-; ^ 35.1 s unoptimized naive; 10.9 s semi-naive + opti
+; ^ 26s unoptimized naive; 10s semi-naive + opti
 ; (test-rules '(letrec ((count (lambda (n) (let ((t (= n 0))) (if t 123 (let ((u (- n 1))) (let ((v (count u))) v))))))) (count 1)) 123)
 ; (test-rules '(letrec ((fac (lambda (n) (let ((v (= n 0))) (if v 1 (let ((m (- n 1))) (let ((w (fac m))) (* n w)))))))) (fac 1)) 1)
 ; (test-rules '(letrec ((fac (lambda (n) (let ((v (= n 0))) (if v 1 (let ((m (- n 1))) (let ((w (fac m))) (* n w)))))))) (fac 3)) 6)

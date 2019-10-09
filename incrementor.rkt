@@ -11,7 +11,7 @@
 
 ; Naming
 ; * P   the set of rules
-; * E   the set of facts
+; * E   the set of tuples
 
 (provide (all-defined-out))
 
@@ -349,12 +349,12 @@
   (define strata (stratify P))
   ;(printf "stratify ~v\n\n" strata)
 
-  ; * E      set of facts (initially only the ones in the database)
+  ; * E      set of tuples (initially only the ones in the database)
   ; * strata list of strata
   (let inter-loop ((E-inter E) (S strata))
-    (printf "\ninter ~a/~a with ~a facts\n" (- (set-count strata) (set-count S)) (set-count strata) (set-count E-inter))
+    (printf "\ninter ~a/~a with ~a tuples\n" (- (set-count strata) (set-count S)) (set-count strata) (set-count E-inter))
     (if (null? S) ; Check whether there are more strata to traverse.
-        E-inter ; All facts (initial and derived).
+        E-inter ; All tuples (initial and derived).
         (let ((Pi (car S))) ; Rules in the first stratum.
           (printf "Pi: ~v\n" (list->set (set-map Pi (lambda (r) (atom-name (rule-head r))))))
           (let intra-loop ((E-intra E-inter))
@@ -362,8 +362,8 @@
               (let ((E-intra* (set-union E-intra tuples)))
                   (if (equal? E-intra E-intra*) ; monotonicity: size check quicker? (TODO)
                       (inter-loop E-intra* (cdr S))
-                      (let ((new-facts (set-subtract E-intra* E-intra)))
-                        (printf "new facts: ~a\n" new-facts)
+                      (let ((new-tuples (set-subtract E-intra* E-intra)))
+                        (printf "new tuples: ~a\n" new-tuples)
                         (intra-loop E-intra*))))))))))
 
 
@@ -372,7 +372,7 @@
   (define strata (stratify P))
 
   (let stratum-loop ((S strata) (E E))
-    (printf "\ninter ~a/~a with ~a facts\n" (- (set-count strata) (set-count S)) (set-count strata) (set-count E))
+    (printf "\ninter ~a/~a with ~a tuples\n" (- (set-count strata) (set-count S)) (set-count strata) (set-count E))
 
     (if (null? S)
         E
