@@ -136,7 +136,7 @@
   (#(Geval e e κ d) . :- . #(App e _ _) #(Step e κ e-body κ‘) #(Lam _ _ e-body) #(Geval e-body e-body κ‘ d))
   (#(Geval e e κ d) . :- . #(App e e-rator e-rands) #(Reachable e κ) 
                             #(Geval e-rator e κ #(prim proc)) #(%select e1 0 e-rands) #(Geval e1 e κ d1) #(%select e2 1 e-rands) #(Geval e2 e κ d2) #(= d ,(proc d1 d2)))
-  (#(Geval e e κ d) . :- . #(If e _ _ _) #(Step e κ e-thenelse κ) #(Geval e-body e-thenelse κ d))
+  (#(Geval e e κ d) . :- . #(If e _ _ _) #(Step e κ e-thenelse κ) #(Geval e-thenelse e-thenelse κ d))
   
   ; Final/2 succeeds when its first argument is an expression that cannot be evaluated further, i.e., which cannot be stepped anymore.
   (#(Final e κ) . :- . #(Reachable e κ) (¬ #(Step e κ e‘ κ‘)))
