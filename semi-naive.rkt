@@ -10,7 +10,7 @@
   (define strata (stratify P))
 
   (let stratum-loop ((S strata) (E E) (num-derived-tuples 0))
-    (printf "\nstratum ~a/~a with ~a tuples\n" (- (set-count strata) (set-count S)) (set-count strata) (set-count E))
+    (printf "\nsn stratum ~a/~a with ~a tuples\n" (- (set-count strata) (set-count S)) (set-count strata) (set-count E))
 
     (if (null? S)
         (solver-result E (- (current-milliseconds) start) num-derived-tuples)

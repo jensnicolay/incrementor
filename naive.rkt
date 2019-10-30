@@ -23,7 +23,7 @@
   ; * E      set of tuples (initially only the ones in the database)
   ; * strata list of strata
   (let inter-loop ((E-inter E) (S strata))
-    (printf "\nstratum ~a/~a with ~a tuples\n" (- (set-count strata) (set-count S)) (set-count strata) (set-count E-inter))
+    (printf "\nn stratum ~a/~a with ~a tuples\n" (- (set-count strata) (set-count S)) (set-count strata) (set-count E-inter))
     (if (null? S) ; Check whether there are more strata to traverse.
         (solver-result E-inter (- (current-milliseconds) start) num-derived-tuples); All tuples (initial and derived).
         (let ((Pi (car S))) ; Rules in the first stratum.

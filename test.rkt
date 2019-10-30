@@ -7,7 +7,7 @@
 
 (provide perform-test)
 
-(define (perform-test P E0 deltas)
+(define (perform-test P E0 . deltas0)
 
 
   (match-define (solver-result tuples-naive duration-naive0 num-derived-naive) (solve-naive P E0))
@@ -43,13 +43,14 @@
   ; TODO? test whether semi-naive-i takes 'much' longer than semi-naive (e.g., x2)
 
 
-  (let delta-loop ((deltas deltas) (deltas-acc (set)) (E-acc E0) (incremental-solver-acc incremental-solver0))
+  (let delta-loop ((deltas deltas0) (deltas-acc (set)) (E-acc E0) (incremental-solver-acc incremental-solver0))
   
     (if (null? deltas)
         'done
         (let* ((delta (car deltas))
                 (deltas-acc* (set-add deltas-acc delta))
                 (E-acc* (apply-deltas (set delta) E-acc)))
+          (printf "\n\n******************************************\ndelta ~a/~a: ~a\n" (set-count deltas-acc*) (length deltas0) delta)
           (match-let (((solver-result tuples-naive duration-naive num-derived-naive) (solve-naive P E-acc*))
                       ((solver-result tuples-semi-naive duration-semi-naive num-derived-semi-naive) (solve-semi-naive P E-acc*))
                       ((solver-result-i incremental-solver-acc* tuples-semi-naive-i duration-semi-naive-i num-derived-semi-naive-i) (incremental-solver-acc (set delta)))

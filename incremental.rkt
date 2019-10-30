@@ -1,17 +1,17 @@
 #lang racket 
 
 (require "datalog.rkt")
-(provide solve-semi-naive-i solver-result-i apply-deltas)
+(provide solve-semi-naive-i solver-result-i add-tuple remove-tuple apply-deltas)
 
 (struct solver-result-i solver-result (incremental-solver) #:transparent)
-(struct add (tuple) #:transparent)
-(struct remove (tuple) #:transparent)
+(struct add-tuple (tuple) #:transparent)
+(struct remove-tuple (tuple) #:transparent)
 
 (define (apply-deltas deltas E)
   (for/fold ((E E)) ((delta deltas))
     (match delta
-      ((add tuple) (set-add E tuple))
-      ((remove tuple) (set-remove E tuple)))))
+      ((add-tuple tuple) (set-add E tuple))
+      ((remove-tuple tuple) (set-remove E tuple)))))
 
 (define (solve-semi-naive-i P E)
 
@@ -20,15 +20,21 @@
   (define strata (stratify P))
 
   (let stratum-loop ((S strata) (E E) (num-derived-tuples 0))
-    (printf "\nstratum ~a/~a with ~a tuples\n" (- (set-count strata) (set-count S)) (set-count strata) (set-count E))
+      (printf "\ni stratum ~a/~a with ~a tuples\n" (- (set-count strata) (set-count S)) (set-count strata) (set-count E))
 
-    (if (null? S)
-        (solver-result-i
-          (make-solver P E)
-          E (- (current-milliseconds) start) num-derived-tuples
-        )
-        (let-values (((E* num-derived-tuples*) (perform-iter (car S) (set) E)))
-          (stratum-loop (cdr S) E* (+ num-derived-tuples num-derived-tuples*))))))
+      (if (null? S)
+          (solver-result-i #f E (- (current-milliseconds) start) num-derived-tuples)
+          (let-values (((E* num-derived-tuples*) (perform-iter (car S) E)))
+            (stratum-loop (cdr S) E* (+ num-derived-tuples num-derived-tuples*))))))
+
+(define (make-solver P E)
+  (lambda (deltas) 'ok))
+    ; (let-values (((tuples-add tuples-remove)
+    ;   (for/fold ((tuples-add (set)) (tuples-remove (set))) ((delta (in-set deltas)))
+    ;     (match delta
+    ;       ((add-tuple tuple) (values (set-add tuples-add tuple) tuples-remove))
+    ;       ((remove-tuple tuple) (values tuples-add (set-add tuples-remove tuple)))))))
+    ;   (solve P E tuples-add))))
 
 (define (rewrite-semi-naive rules)
   (let ((idb-preds (for/set ((rule (in-set rules)))
@@ -86,56 +92,44 @@
     (set-union R (hash-ref p->r (atom-name tuple) (set)))))
 
 ; selects rules that only contain EDB preds
-; (define (get-edb-rules rules) ; these don't need to be rewritten
-;   (let ((idb-preds
-;           (for/set ((r (in-set rules)))
-;             (atom-name (rule-head r))))); this again is already computed by scc (TODO: stratum abstraction!)
-;     (for/fold ((R (set))) ((r (in-set rules)))
-;       (if (for/and ((term (in-list (rule-body r))))
-;             (match term
-;               ((¬ p) ; must be edb!
-;                 #t)
-;               (_
-;                 (let ((term-name (atom-name term)))
-;                   (not (set-member? idb-preds term-name))))))
-;           (set-add R r)
-;           R))))
+(define (get-edb-rules rules) ; these don't need to be rewritten (OR: should always be rewritten to *Recent* so they only work with incoming delta-edb-tuples)
+  (let ((idb-preds
+          (for/set ((r (in-set rules)))
+            (atom-name (rule-head r))))); this again is already computed by scc (TODO: stratum abstraction!)
+    (for/fold ((R (set))) ((r (in-set rules)))
+      (if (for/and ((term (in-list (rule-body r))))
+            (match term
+              ((¬ p) ; must be edb!
+                #t)
+              (_
+                (let ((term-name (atom-name term)))
+                  (not (set-member? idb-preds term-name))))))
+          (set-add R r)
+          R))))      
 
-(define (make-solver P E)
-  (lambda (deltas)
-    (let-values (((tuples-add tuples-remove)
-      (for/fold ((tuples-add (set)) (tuples-remove (set))) ((delta (in-set deltas)))
-        (match delta
-          ((add tuple) (values (set-add tuples-add tuple) tuples-remove))
-          ((remove tuple) (values tuples-add (set-add tuples-remove tuple)))))))
-      (perform-iter tuples-add E))))
-      
+(define (perform-iter rules tuples) ; per stratum
 
-(define (perform-iter rules tuples real-delta-tuples) ; per stratum
-
-  (define semi-naive-rules (rewrite-semi-naive rules)) ; TODO: needs to be done once!
+  (define semi-naive-rules (rewrite-semi-naive rules))
   (printf "semi-naive rules: ~a\n" semi-naive-rules)
   (define p->r (pred-to-rules semi-naive-rules))
   ;(printf "pred-to-rules ~a\n" p->r)
+  (define edb-rules (get-edb-rules rules))
+  ;(printf "edb-rules ~a\n" edb-rules)
   (define num-derived-tuples 0)
   
-  (define (iterare real-delta-tuples tuples)
-    (printf "real-delta-tuples ~a\n" real-delta-tuples)
-    (if (set-empty? real-delta-tuples)
-        (values tuples num-derived-tuples)
-        (let ((delta-rules (select-rules-for-tuples real-delta-tuples p->r)))
-          (printf "rules for real-deltas: ~a\n" delta-rules)
-          (let ((tuples* (set-union tuples real-delta-tuples)))
-            (let delta-rule-loop ((rules* delta-rules) (delta-tuples (set)))
-              (if (set-empty? rules*)
-                (let ((real-delta-tuples (set-subtract delta-tuples tuples*)))
-                  (iterare real-delta-tuples tuples*))
-                (let ((rule (set-first rules*)))
-                  (let ((derived-tuples-for-rule (fire-rule rule tuples* real-delta-tuples)))
-                    (printf "fired ~a got ~a\n" rule derived-tuples-for-rule)
-                    (set! num-derived-tuples (+ num-derived-tuples (set-count derived-tuples-for-rule)))
-                    (delta-rule-loop (set-rest rules*) (set-union delta-tuples derived-tuples-for-rule))))))))))
-  
-  (iterare real-delta-tuples tuples))
+  (let rule-loop ((delta-rules edb-rules) (tuples tuples) (previous-delta-tuples tuples))
+    ;(printf "delta rules :~a\n" delta-rules)
+    (let delta-rule-loop ((rules* delta-rules) (delta-tuples (set)))
+      (if (set-empty? rules*)
+        (let ((real-delta-tuples (set-subtract delta-tuples tuples)))
+          (printf "delta-tuples ~a\nreal-delta-tuples ~a\n" delta-tuples real-delta-tuples)
+          (if (set-empty? real-delta-tuples)
+              (values tuples num-derived-tuples)
+              (rule-loop (select-rules-for-tuples real-delta-tuples p->r) (set-union tuples real-delta-tuples) real-delta-tuples)))
+        (let ((rule (set-first rules*)))
+          (let ((derived-tuples-for-rule (fire-rule rule tuples previous-delta-tuples)))
+            ;(printf "fired ~a got ~a\n" rule derived-tuples-for-rule)
+            (set! num-derived-tuples (+ num-derived-tuples (set-count derived-tuples-for-rule)))
+            (delta-rule-loop (set-rest rules*) (set-union delta-tuples derived-tuples-for-rule))))))))
     
      
