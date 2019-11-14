@@ -6,7 +6,7 @@
 
 (define (correctness-test P E0 solvers . deltas)
 
-  (define (check-equal-tuples* . rs)
+  (define (check-equal-tuples*  rs)
     (for ((r2 (in-list (cdr rs))))
       (check-equal-tuples (car rs) r2)))
 
@@ -14,12 +14,12 @@
     (unless (equal? (solver-result-tuples r1) (solver-result-tuples r2))
       (error "tuples not equal")))
 
-  (define (check-lesseq-derivations* . rs)
+  (define (check-lesseq-derivations* rs)
     (for ((r2 (in-list (cdr rs))))
       (check-lesseq-derivations (car rs) r2)))
 
   (define (check-lesseq-derivations r1 r2)
-    (unless (<= (solver-result-num-derived-tuples r1) (solver-result-num-derived-tuples r2))
+    (unless (> (solver-result-num-derived-tuples r1) (solver-result-num-derived-tuples r2))
       (error "num derived tuples not <=")))
 
 
