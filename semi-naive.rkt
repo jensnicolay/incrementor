@@ -3,6 +3,12 @@
 (require "datalog.rkt")
 (provide solve-semi-naive)
 
+(define (make-delta-solver P E)
+  (lambda deltas
+    (let ((E* (apply-deltas deltas E)))
+      (solve-semi-naive P E*))))
+
+
 (define (solve-semi-naive P E)
 
   (define start (current-milliseconds))
@@ -10,10 +16,10 @@
   (define strata (stratify P))
 
   (let stratum-loop ((S strata) (E E) (num-derived-tuples 0))
-    (printf "\nsn stratum ~a/~a with ~a tuples\n" (- (set-count strata) (set-count S)) (set-count strata) (set-count E))
+    ;(printf "\nsn stratum ~a/~a with ~a tuples\n" (- (set-count strata) (set-count S)) (set-count strata) (set-count E))
 
     (if (null? S)
-        (solver-result E (- (current-milliseconds) start) num-derived-tuples)
+        (solver-result E (- (current-milliseconds) start) num-derived-tuples (make-delta-solver P E))
         (let-values (((E* num-derived-tuples*) (perform-iter (car S) E)))
           (stratum-loop (cdr S) E* (+ num-derived-tuples num-derived-tuples*))))))
 
@@ -25,10 +31,8 @@
     (match-let (((rule head body) r))
       
     (define (rewrite-terms previous-terms future-terms rewrites)
-      (if (null? future-terms)
-          (if (set-empty? rewrites)
-              (set r)
-              rewrites)
+      (if (null? future-terms) 
+          rewrites ; rules without IDB preds are filtered out
           (let ((term (car future-terms)))
             (match term
               ((¬ p) ; in a stratified Datalog, all negated preds are guaranteed to be EDBs, so no action necessary
@@ -91,7 +95,7 @@
 (define (perform-iter rules tuples) ; per stratum
 
   (define semi-naive-rules (rewrite-semi-naive rules))
-  (printf "semi-naive rules: ~a\n" semi-naive-rules)
+  ;(printf "semi-naive rules: ~a\n" semi-naive-rules)
   (define p->r (pred-to-rules semi-naive-rules))
   ;(printf "pred-to-rules ~a\n" p->r)
   (define edb-rules (get-edb-rules rules))
@@ -102,8 +106,8 @@
     ;(printf "delta rules :~a\n" delta-rules)
     (let delta-rule-loop ((rules* delta-rules) (delta-tuples (set)))
       (if (set-empty? rules*)
-        (let ((real-delta-tuples (set-subtract delta-tuples tuples)))
-          (printf "delta-tuples ~a\nreal-delta-tuples ~a\n" delta-tuples real-delta-tuples)
+        (let ((real-delta-tuples (set-subtract delta-tuples tuples))) ; TODO?: full set subtr
+          ;(printf "real-delta-tuples ~a\n" real-delta-tuples)
           (if (set-empty? real-delta-tuples)
               (values tuples num-derived-tuples)
               (rule-loop (select-rules-for-tuples real-delta-tuples p->r) (set-union tuples real-delta-tuples) real-delta-tuples)))
