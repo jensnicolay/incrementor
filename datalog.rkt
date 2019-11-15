@@ -26,7 +26,7 @@
 (struct ¬ (p) #:transparent)
 (struct rule (head body) #:transparent)
 
-(struct solver-result (tuples duration num-derived-tuples delta-solver) #:transparent)
+(struct solver-result (tuples num-derived-tuples delta-solver) #:transparent)
 
 ;;;
 (struct add-tuple (tuple) #:transparent)

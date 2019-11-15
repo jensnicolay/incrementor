@@ -4,6 +4,11 @@
 
 (provide correctness-test performance-test)
 
+(define (create-timer)
+  (let ((start (current-milliseconds)))
+    (lambda ()
+      (- (current-milliseconds) start))))
+
 (define (correctness-test P E0 solvers . deltas)
 
   (define (check-equal-tuples*  rs)
@@ -36,7 +41,7 @@
 
   (let delta-loop ((deltas deltas) (deltas-acc '()) (delta-solvers delta-solvers0))
     (if (null? deltas)
-        'done
+        'ok
         (let* ((delta (car deltas))
                 (deltas-acc* (append deltas-acc (list delta)))
                 (full-solver-results (map (lambda (solver) (solver P (apply-deltas deltas-acc* E0))) solvers))
@@ -60,60 +65,22 @@
 
 
 (define (performance-test P E0 solvers . deltas)
-  123
 
-  ; (define delta-acc-list
-  ;   (for/fold ((deltas-acc (list E0))) ((delta (in-list deltas)))
-  ;     (append deltas-acc (list delta))))
+  (define (data-point tme r)
+    (cons tme (solver-result-num-derived-tuples r)))
 
-  ; (define naive (solve-naive P E0)) ; TODO make output versions to help GC
-  ; (define semi-naive (solve-semi-naive P E0))
-  ; (define incremental (solve-semi-naive-i P E0))
-
-  ; (check-equal-tuples naive semi-naive)
-  ; (check-equal-tuples naive incremental)
-
-  ; (check-lesseq-derivations semi-naive naive)
-  ; (check-lesseq-derivations incremental naive)
-
-  ; (define naive-solver0 (solver-result-solver naive))
-  ; (define semi-naive-solver0 (solver-result-solver semi-naive))
-  ; (define incremental-solver0 (solver-result-solver incremental))
-
-  ; (define (delta-solver-apply-list-of-deltas delta-solver deltas)
-  ;   ()
-
-  ; (define (replay initial-solver list-of-list-of-deltas)
-  ;   (let ((start (current-milliseconds)))
-  ;     (let ((solver0 (initial-solver P E0)))
-  ;       (let ((end (- (current-milliseconds) start)))
-  ;         (let ll-deltas-loop ((ll-deltas list-of-list-of-deltas) (result (list solver0))) ; TODO map output transf
-  ;     (if (null? delta-acc-list)
-  ;         (list->vector (reverse results))
-  ;         (let ((delta-acc (car delta-acc-list)))
-  ;           (printf "deltas ~a/~a: ~a\n" (- (length deltas) (length delta-acc-list)) (length deltas))
-  ;           (let ((start (current-milliseconds)))
-  ;             (for ((deltas (in-list delta-acc)))
-  ;           (for/vector ((solver (in-vector solvers)))
-  ;           (for/vector ((  (in-list delta-acc*)))
-  ;             (solver )
-  ;           (match-let (((solver-result tuples-naive duration-naive num-derived-naive _) (solve-naive P E-acc*))
-  ;                       ((solver-result tuples-semi-naive duration-semi-naive num-derived-semi-naive _) (solve-semi-naive P E-acc*))
-  ;                       ((solver-result tuples-semi-naive-i-single duration-semi-naive-i-single num-derived-semi-naive-i-single _) (incremental-solver-single (set delta)))
-  ;                       ((solver-result tuples-semi-naive-i-acc duration-semi-naive-i-acc num-derived-semi-naive-i-acc _) (incremental-solver0 deltas-acc*))
-  ;                     )
-
-  ;           (check-equal-tuples naive semi-naive)
-  ;           (check-equal-tuples naive incremental)
-
-  ;           (check-lesseq-derivations semi-naive naive)
-  ;           (check-lesseq-derivations incremental naive)
-
-  ;           (delta-loop (cdr deltas) deltas-acc* E-acc*)))))))
+  ; single-step: initial + each delta added individually using latest delta-solver
+  (define (single-step)
+    (for/list ((solver (in-list solvers)))
+      (let* ((timer (create-timer))
+              (initial-solver-result (solver P E0)))
+        (let loop ((deltas deltas) (delta-solver (solver-result-delta-solver initial-solver-result)) (results (list (data-point (timer) initial-solver-result))))
+          (if (null? deltas)
+              (reverse results)
+              (let ((delta (car deltas)))
+                (let ((delta-solver-result (delta-solver delta)))
+                  (loop (cdr deltas) (solver-result-delta-solver delta-solver-result) (cons (data-point (timer) delta-solver-result) results)))))))))
 
 
-  ; (define replay-results (replay (vector naive-solver0 semi-naive-solver0 incremental-solver0)))
-
+  (single-step)
 )
-
-; TODO: the single step thingies should be rerun to avoid accumulating time rounding errors
