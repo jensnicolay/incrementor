@@ -5,7 +5,8 @@
     rule rule-head rule-body :-
     stratify fire-rule
     solver-result solver-result-tuples solver-result-num-derived-tuples solver-result-delta-solver
-    add-tuple remove-tuple apply-deltas)
+    add-tuple remove-tuple apply-deltas
+    sort-tuples)
 
 ; Terminology
 ; * Term: Constant or Variable
@@ -34,7 +35,7 @@
 
 (define (apply-deltas deltas E)
   (for/fold ((E E)) ((delta deltas))
-    (match delta
+     (match delta
       ((add-tuple tuple) (set-add E tuple))
       ((remove-tuple tuple) (set-remove E tuple)))))
 ;;;
@@ -161,7 +162,7 @@
 
   R)
 
-
+; returns list of sets of rule names
 (define (strata P)
 
   (define G-pred (precedence-lgraph P))   ; Compute a precedence graph based on dependencies between the predicates.
@@ -179,13 +180,9 @@
   (define cid2C (for/fold ((R (hash))) (((v cid) (in-hash v2cid)))
                         (hash-set R cid (set-add (hash-ref R cid (set)) v))))
   ;(printf "cid2C: ~v\n" cid2C)
-
-  ; (define Strata (for/fold ((R (hash))) ((cid (in-list cid-sorted)))
-  ;                   (for/fold ((R R)) ((v (in-set (hash-ref cid2C cid))))
-  ;                     (hash-set R v cid))))
-
   (map (lambda (cid) (hash-ref cid2C cid)) cid-sorted))
 
+; returns list of sets of rules
 (define (stratify P)
   (define S (strata P))
   ;(printf "strata: ~v\n" S)
@@ -213,7 +210,7 @@
         (apply operator operands)))
     (else x)))
 
-; Tries to unify an atom to a given pattern (also an atom). Requires atom and pattern to be atoms. Returns an eredtended environment or #f if unification fails.
+; Tries to unify an atom to a given pattern (also an atom). Requires atom and pattern to be atoms. Returns an extended environment or #f if unification fails.
 (define (unify-atoms atom pattern env) ; TODO which is the pattern?
   (if (and (eq? (atom-name atom) (atom-name pattern)) (= (atom-arity atom) (atom-arity pattern)))
       (let unify-atom-arguments ((i 0) (env env)) ; Check unifiability for all argument terms of the atom.
@@ -227,7 +224,7 @@
                   #f)))) ; Unification of the i-th argument failed.
       #f)) ; The pattern has a different name or arity.
 
-; Tries to unify a term to a given pattern. The pattern must be grounded but may contain wildcards (_). Returns an eredtended environment or #f if unification fails.
+; Tries to unify a term to a given pattern. The pattern must be grounded but may contain wildcards (_). Returns an extended environment or #f if unification fails.
 (define (unify-terms term pattern env) ; pattern must be grounded
   ;(printf "unify ~a with ~a in ~a\n" term y env)
   (let ((red (evaluate-unquoted term env))) ; Reduce the term if needed.
@@ -353,6 +350,10 @@
             (if env*
                 (e-loop (set-rest E) (set-add work-acc (cons remaining-preds env*)))
                 (e-loop (set-rest E) work-acc)))))))
+
+(define (sort-tuples tuples)
+  (let ((tuple-list (set->list tuples)))
+    (sort (map ~a tuple-list) string<?)))
 
 
 (module+ main

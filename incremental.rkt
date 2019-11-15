@@ -3,23 +3,21 @@
 (require "datalog.rkt")
 (provide solve-semi-naive-i)
 
+(struct stratum (edb-rules semi-naive-rules-idb p->r-edb p->r-idb) #:transparent)
+
 (define (solve-semi-naive-i P E)
 
-  (define strata (stratify P))
+  (define strata (map annotate-stratum (stratify P)))
 
-  (define (solve E)
+  (define (solve E0)
 
     (define num-derived-tuples 0)
 
-    (define (stratum-rule-loop rules tuples) ; per stratum, initial
+    (define (stratum-rule-loop strat tuples) ; per stratum, initial
 
-      (define edb-rules (get-edb-rules rules))
-      ;(printf "edb-rules ~a\n" edb-rules)
-      (define semi-naive-rules-idb (rewrite-semi-naive-idb rules))
-      ;(printf "semi-naive rules idb: ~a\n" semi-naive-rules-idb)
-      (define p->r (pred-to-rules semi-naive-rules-idb))
-      ;(printf "pred-to-rules ~a\n" p->r)
-      (define num-derived-tuples 0)
+      (define edb-rules (stratum-edb-rules strat))
+      (define semi-naive-rules-idb (stratum-semi-naive-rules-idb strat))
+      (define p->r (stratum-p->r-idb strat))
       
       (let delta-loop ((delta-rules edb-rules) (tuples tuples) (previous-delta-tuples tuples))
         ;(printf "delta rules :~a\n" delta-rules)
@@ -40,24 +38,22 @@
     (define (stratum-loop S E)
       ;(printf "\ni stratum ~a/~a with ~a tuples\n" (- (set-count strata) (set-count S)) (set-count strata) (set-count E))
       (if (null? S)
-          (solver-result E num-derived-tuples (make-delta-solver E))
+          (solver-result E num-derived-tuples (make-delta-solver E)) ; TODO: fix: E means "all tuples" here!
           (let ((E* (stratum-rule-loop (car S) E)))
             (stratum-loop (cdr S) E*))))
 
-    (stratum-loop strata E)) ; end solve
+    (stratum-loop strata E0)) ; end solve
 
   (define (solve-incremental E tuples-add)
     
     (define num-derived-tuples 0)
 
-    (define (stratum-rule-loop rules tuples real-delta-tuples-edb) ; per stratum, incremental
-      (define semi-naive-rules-edb (rewrite-semi-naive-edb rules)) ; TODO move so this work is only done once
-      ;(printf "semi-naive rules edb: ~a\n" semi-naive-rules-edb)
-      (define semi-naive-rules-idb (rewrite-semi-naive-idb rules))
-      ;(printf "semi-naive rules idb: ~a\n" semi-naive-rules-idb)
-      (define p->r-idb (pred-to-rules semi-naive-rules-idb))
-      (define p->r-edb (pred-to-rules semi-naive-rules-edb))
-      ;(printf "pred-to-rules ~a\n" p->r)
+    (define (stratum-rule-loop strat tuples real-delta-tuples-edb) ; per stratum, incremental
+
+      (define edb-rules (stratum-edb-rules strat))
+      (define semi-naive-rules-idb (stratum-semi-naive-rules-idb strat))
+      (define p->r-edb (stratum-p->r-edb strat))
+      (define p->r-idb (stratum-p->r-idb strat))
 
       ; TODO (here, elsewhere?): adding (re)discovered tuples immediately to a current `all-tuples` set (quicker convergence?)
 
@@ -97,8 +93,8 @@
 
     (stratum-loop strata E))
 
-  (define (make-delta-solver E)
-    (lambda deltas
+  (define (make-delta-solver E) ; TODO: fix: E are all tuples here, not only (original) EDB (= E0)
+    (lambda (deltas)
       (let-values (((tuples-add tuples-remove)
         (for/fold ((tuples-add (set)) (tuples-remove (set))) ((delta (in-list deltas)))
           (match delta
@@ -211,7 +207,15 @@
                 (let ((term-name (atom-name term)))
                   (not (set-member? idb-preds term-name))))))
           (set-add R r)
-          R))))      
-    
-     
+          R))))     
 
+(define (annotate-stratum stratum-rules)
+  (define semi-naive-rules-edb (rewrite-semi-naive-edb stratum-rules))
+  ;(printf "semi-naive rules edb: ~a\n" semi-naive-rules-edb)
+  (define semi-naive-rules-idb (rewrite-semi-naive-idb stratum-rules))
+  ;(printf "semi-naive rules idb: ~a\n" semi-naive-rules-idb)
+  (define p->r-idb (pred-to-rules semi-naive-rules-idb))
+  (define p->r-edb (pred-to-rules semi-naive-rules-edb))
+  ;(printf "pred-to-rules ~a\n" p->r)
+
+  (stratum semi-naive-rules-edb semi-naive-rules-idb p->r-edb p->r-idb))

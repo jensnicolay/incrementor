@@ -3,52 +3,52 @@
 (require "datalog.rkt")
 (provide solve-semi-naive)
 
+(struct stratum (edb-rules semi-naive-rules p->r) #:transparent)
+
 (define (solve-semi-naive P E)
 
-  (define strata (stratify P))
+  (define strata (map annotate-stratum (stratify P)))
 
-  (define (solve E)
+  (define (solve E0)
     
     (define num-derived-tuples 0)
 
-    (define (stratum-rule-loop rules tuples) ; per stratum
+    (define (stratum-rule-loop strat tuples) ; per stratum
 
-      (define semi-naive-rules (rewrite-semi-naive rules))
-      ;(printf "semi-naive rules: ~a\n" semi-naive-rules)
-      (define p->r (pred-to-rules semi-naive-rules))
-      ;(printf "pred-to-rules ~a\n" p->r)
-      (define edb-rules (get-edb-rules rules))
-      ;(printf "edb-rules ~a\n" edb-rules)
+      (define edb-rules (stratum-edb-rules strat))
+      (define semi-naive-rules (stratum-semi-naive-rules strat))
+      (define p->r (stratum-p->r strat))
       
       (let rule-loop ((delta-rules edb-rules) (tuples tuples) (previous-delta-tuples tuples))
         ;(printf "delta rules :~a\n" delta-rules)
         (let delta-rule-loop ((rules* delta-rules) (delta-tuples (set)))
           (if (set-empty? rules*)
             (let ((real-delta-tuples (set-subtract delta-tuples tuples))) ; TODO?: full set subtr
-              ;(printf "real-delta-tuples ~a\n" real-delta-tuples)
+              (printf "real-delta-tuples ~a\n" real-delta-tuples)
               (if (set-empty? real-delta-tuples)
                   tuples
                   (rule-loop (select-rules-for-tuples real-delta-tuples p->r) (set-union tuples real-delta-tuples) real-delta-tuples)))
             (let ((rule (set-first rules*)))
               (let ((derived-tuples-for-rule (fire-rule rule tuples previous-delta-tuples)))
-                ;(printf "fired ~a got ~a\n" rule derived-tuples-for-rule)
+                (printf "fired ~a got ~a\n" rule derived-tuples-for-rule)
                 (set! num-derived-tuples (+ num-derived-tuples (set-count derived-tuples-for-rule)))
                 (delta-rule-loop (set-rest rules*) (set-union delta-tuples derived-tuples-for-rule))))))))
 
   (define (stratum-loop S E)
     ;(printf "\nsn stratum ~a/~a with ~a tuples\n" (- (set-count strata) (set-count S)) (set-count strata) (set-count E))
     (if (null? S)
-        (solver-result E num-derived-tuples (make-delta-solver E))
+        (solver-result E num-derived-tuples (make-delta-solver))
         (let ((E* (stratum-rule-loop (car S) E)))
           (stratum-loop (cdr S) E*))))
-  
-  (stratum-loop strata E))
-  
-  (define (make-delta-solver E)
-    (lambda deltas
-      (let ((E* (apply-deltas deltas E)))
-        (solve E*))))
 
+  (define (make-delta-solver) ; TODO: investigate: addition-only delta can be computed more optimal by keeping all tuples?
+    (lambda (deltas)
+      (let ((E (apply-deltas deltas E0)))
+        (printf "solving ~a\n" E)
+        (solve E))))
+  
+  (stratum-loop strata E0))
+  
   (solve E))
 
 (define (rewrite-semi-naive rules)
@@ -119,4 +119,12 @@
           (set-add R r)
           R))))
 
+(define (annotate-stratum stratum-rules)
+  (define semi-naive-rules (rewrite-semi-naive stratum-rules))
+  ;(printf "semi-naive rules: ~a\n" semi-naive-rules)
+  (define p->r (pred-to-rules semi-naive-rules))
+  ;(printf "pred-to-rules ~a\n" p->r)
+  (define edb-rules (get-edb-rules stratum-rules))
+  ;(printf "edb-rules ~a\n" edb-rules)
 
+  (stratum edb-rules semi-naive-rules p->r))

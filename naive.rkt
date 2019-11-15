@@ -9,7 +9,7 @@
   (define strata (stratify P))
   
   ; * E      set of tuples (initially only the ones in the database)
-  (define (solve E)
+  (define (solve E0)
 
     (define num-derived-tuples 0)
 
@@ -25,7 +25,7 @@
     (define (stratum-loop S E-inter)
       ;(printf "\nn stratum ~a/~a with ~a tuples\n" (- (set-count strata) (set-count S)) (set-count strata) (set-count E-inter))
       (if (null? S) ; Check whether there are more strata to traverse.
-          (solver-result E-inter num-derived-tuples (make-delta-solver E)); All tuples (initial and derived).
+          (solver-result E-inter num-derived-tuples (make-delta-solver)); All tuples (initial and derived).
           (let ((Pi (car S))) ; Rules in the first stratum.
             ;(printf "Pi: ~v\n" (list->set (set-map Pi (lambda (r) (atom-name (rule-head r))))))
             (let intra-loop ((E-intra E-inter))
@@ -34,13 +34,13 @@
                     (if (equal? E-intra E-intra*) ; monotonicity: size check quicker? (TODO)
                         (stratum-loop (cdr S) E-intra*)
                         (intra-loop E-intra*))))))))
-                        
-    (stratum-loop strata E))
 
-  (define (make-delta-solver E)
-    (lambda deltas
-      (let ((E* (apply-deltas deltas E)))
-        (solve E*))))
+    (define (make-delta-solver)
+      (lambda (deltas)
+        (let ((E (apply-deltas deltas E0)))
+          (solve E))))
+                                            
+    (stratum-loop strata E0))
 
   (solve E)                       
 )
