@@ -51,14 +51,13 @@
     (define num-derived-tuples 0)
 
     (define (stratum-rule-loop rules tuples real-delta-tuples-edb) ; per stratum, incremental
-      (define semi-naive-rules-edb (rewrite-semi-naive-edb rules))
+      (define semi-naive-rules-edb (rewrite-semi-naive-edb rules)) ; TODO move so this work is only done once
       ;(printf "semi-naive rules edb: ~a\n" semi-naive-rules-edb)
       (define semi-naive-rules-idb (rewrite-semi-naive-idb rules))
       ;(printf "semi-naive rules idb: ~a\n" semi-naive-rules-idb)
       (define p->r-idb (pred-to-rules semi-naive-rules-idb))
       (define p->r-edb (pred-to-rules semi-naive-rules-edb))
       ;(printf "pred-to-rules ~a\n" p->r)
-      (define num-derived-tuples 0)
 
       ; TODO (here, elsewhere?): adding (re)discovered tuples immediately to a current `all-tuples` set (quicker convergence?)
 
