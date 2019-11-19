@@ -38,4 +38,4 @@
 ))
 
 (correctness-test P E (list solve-naive solve-semi-naive) deltas)
-(performance-test P E (list solve-naive solve-semi-naive solve-semi-naive-i) deltas)
+(performance-test P E (list solve-naive solve-semi-naive solve-incremental) deltas)

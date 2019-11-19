@@ -1,11 +1,11 @@
 #lang racket 
 
 (require "datalog.rkt")
-(provide solve-semi-naive-i)
+(provide solve-incremental)
 
 (struct stratum (edb-rules semi-naive-rules-idb p->r-edb p->r-idb) #:transparent)
 
-(define (solve-semi-naive-i P E)
+(define (solve-incremental P E)
 
   (define strata (map annotate-stratum (stratify P)))
 
@@ -44,7 +44,7 @@
 
     (stratum-loop strata E0)) ; end solve
 
-  (define (solve-incremental E tuples-add)
+  (define (solve-incremental-delta E tuples-add)
     
     (define num-derived-tuples 0)
 
@@ -100,7 +100,7 @@
           (match delta
             ((add-tuple tuple) (values (set-add tuples-add tuple) tuples-remove))
             ((remove-tuple tuple) (values tuples-add (set-add tuples-remove tuple)))))))
-        (solve-incremental E tuples-add))))
+        (solve-incremental-delta E tuples-add))))
 
   (solve E))
 
