@@ -24,13 +24,13 @@
         (let delta-rule-loop ((rules* delta-rules) (delta-tuples (set)))
           (if (set-empty? rules*)
             (let ((real-delta-tuples (set-subtract delta-tuples tuples))) ; TODO?: full set subtr
-              (printf "real-delta-tuples ~a\n" real-delta-tuples)
+              ; (printf "real-delta-tuples ~a\n" real-delta-tuples)
               (if (set-empty? real-delta-tuples)
                   tuples
                   (rule-loop (select-rules-for-tuples real-delta-tuples p->r) (set-union tuples real-delta-tuples) real-delta-tuples)))
             (let ((rule (set-first rules*)))
               (let ((derived-tuples-for-rule (fire-rule rule tuples previous-delta-tuples)))
-                (printf "fired ~a got ~a\n" rule derived-tuples-for-rule)
+                ; (printf "fired ~a got ~a\n" rule derived-tuples-for-rule)
                 (set! num-derived-tuples (+ num-derived-tuples (set-count derived-tuples-for-rule)))
                 (delta-rule-loop (set-rest rules*) (set-union delta-tuples derived-tuples-for-rule))))))))
 
@@ -44,7 +44,7 @@
   (define (make-delta-solver) ; TODO: investigate: addition-only delta can be computed more optimal by keeping all tuples?
     (lambda (deltas)
       (let ((E (apply-deltas deltas E0)))
-        (printf "solving ~a\n" E)
+        ; (printf "solving ~a\n" E)
         (solve E))))
   
   (stratum-loop strata E0))

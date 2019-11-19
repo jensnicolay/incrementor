@@ -84,6 +84,26 @@
                 (let ((delta-solver-result (delta-solver (list delta))))
                   (loop (cdr deltas) (solver-result-delta-solver delta-solver-result) (cons (data-point (timer) delta-solver-result) results)))))))))
 
+  ; cumulative: initial + each delta added cumulative using initial delta-solver
+  (define (cumulative)
+    (define delta-lists ; list of list of deltas
+      (let loop ((deltas deltas) (delta-acc '()) (result '()))
+        (if (null? deltas)
+            (reverse result)
+            (let ((delta (car deltas)))
+              (let ((delta-acc* (append delta-acc (list delta))))
+                (loop (cdr deltas) delta-acc* (cons delta-acc* result)))))))
+    (for/list ((solver (in-list solvers)))
+      (let* ((timer (create-timer))
+              (initial-solver-result (solver P E0))
+              (initial-delta-solver (solver-result-delta-solver initial-solver-result)))
+        (let loop ((delta-lists delta-lists) (results (list (data-point (timer) initial-solver-result))))
+          (if (null? delta-lists)
+              (reverse results)
+              (let ((deltas (car delta-lists)))
+                (let ((delta-solver-result (initial-delta-solver deltas)))
+                  (loop (cdr delta-lists) (cons (data-point (timer) delta-solver-result) results)))))))))
 
   (single-step)
+  (cumulative)
 )
