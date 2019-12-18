@@ -8,7 +8,7 @@
     add-tuple remove-tuple apply-deltas
     sort-tuples)
 
-; Terminology
+; Terminology (TODO: look at https://dodisturb.me/posts/2018-12-25-The-Essence-of-Datalog.html for ADT naming)
 ; * Term: Constant or Variable
 ; * Atom: Predicate + list of terms
 ; * EDB predicate: predicate in the source tables of the database
@@ -224,7 +224,9 @@
                   #f)))) ; Unification of the i-th argument failed.
       #f)) ; The pattern has a different name or arity.
 
-; Tries to unify a term to a given pattern. The pattern must be grounded but may contain wildcards (_). Returns an extended environment or #f if unification fails.
+; Tries to unify a term to a given pattern.
+; The pattern must be grounded but may contain wildcards (_).
+; Returns an extended environment or #f if unification fails.
 (define (unify-terms term pattern env) ; pattern must be grounded
   ;(printf "unify ~a with ~a in ~a\n" term y env)
   (let ((red (evaluate-unquoted term env))) ; Reduce the term if needed.
@@ -260,35 +262,37 @@
   (let ((new-fact (apply vector-immutable (cons (atom-name hv) terms))))
     new-fact)))
 
+(struct fire-state (atoms env ptuples) #:transparent)
+
 (define (fire-rule rule E delta-tuples)
   ;(printf "fire rule ~v E ~v\n" rule E)
-  (let loop ((work (set (cons (rule-body rule) (hash)))) ; The predicates to be checked. Initially, the predicates in the rule body.
+  (let loop ((work (set (fire-state (rule-body rule) (hash) (set)))) ; The predicates to be checked. Initially, the predicates in the rule body.
              (ΔE   (set)))
     ;(printf "loop ~v\n" work)
     (if (set-empty? work)
         ΔE
-        (match-let (((cons atoms env) (set-first work)))
+        (match-let (((fire-state atoms env ptuples) (set-first work)))
         ;(printf "looking at atoms ~v in ~v\n" atoms env)
         (if (null? atoms)
             (let* ((hv (rule-head rule))
                    (new-fact (bind-fact hv env)))
-              (loop (set-rest work) (set-add ΔE new-fact)))
-            (let ((av (car atoms)))
+              (loop (set-rest work) (set-add ΔE (cons new-fact ptuples))))
+            (let ((av (car atoms))
+                  (atoms-rest (cdr atoms)))
               (match av
                 ((¬ av) ; duplicating special terms, other strategy: let special forms return results one by one for "fail-fast"
                   (match av
                     ((vector '= p q)
-                      (let* ((atoms-rest (cdr atoms))
-                             (pp (evaluate-unquoted p env))
+                      (let* ((pp (evaluate-unquoted p env))
                              (qq (evaluate-unquoted q env))
                              (env* (unify-terms pp qq env)))
                         (if env* ; Test whether unification succeeded.
                             (loop (set-rest work) ΔE)
-                            (loop (set-add (set-rest work) (cons (cdr atoms) env)) ΔE))))
+                            (loop (set-add (set-rest work) (fire-state atoms-rest env ptuples)) ΔE))))
                     (_
                       (let e-loop ((E E))
                         (if (set-empty? E)
-                            (loop (set-add (set-rest work) (cons (cdr atoms) env)) ΔE)
+                            (loop (set-add (set-rest work) (fire-state atoms-rest env ptuples)) ΔE)
                             (let* ((ev (set-first E))
                                    (env* (unify-atoms av ev env)))
                                 ;(printf "¬ unify result ~a ~a: ~v\n" av ev m)
@@ -297,58 +301,53 @@
                                   (e-loop (set-rest E)))))))))
                 ((vector 'DEBUG name)
                   (printf "~a: about to match ~a with ~a\n\n" name (cadr atoms) env)
-                  (loop (set-add (set-rest work) (cons (cdr atoms) env)) ΔE))
+                  (loop (set-add (set-rest work) (fire-state atoms-rest env ptuples)) ΔE))
                 ((vector '%for-all x index l) ; for all (x, i) in l
-                  (let ((d-lst (evaluate l env))
-                        (atoms-rest (cdr atoms)))
+                  (let ((d-lst (evaluate l env)))
                     (loop (for/fold ((work (set-rest work))) ((el d-lst) (i (in-naturals)))
-                                        (set-add work (cons atoms-rest (hash-set (hash-set env index i) x el))))
+                                        (set-add work (fire-state atoms-rest (hash-set (hash-set env index i) x el) ptuples)))
                                       ΔE)))
                 ((vector '%for-all x l) ; for all x in l
                   (let ((d-lst (evaluate l env)))
-                    (let ((atoms-rest (cdr atoms)))
-                      (if (null? d-lst)
-                          (loop (set-rest work) ΔE)
-                          (loop (for/fold ((work (set-rest work))) ((el d-lst))
-                            (set-add work (cons atoms-rest (hash-set env x el))))
-                            ΔE)))))
+                    (if (null? d-lst)
+                        (loop (set-rest work) ΔE)
+                        (loop (for/fold ((work (set-rest work))) ((el d-lst))
+                          (set-add work (fire-state atoms-rest (hash-set env x el) ptuples)))
+                          ΔE))))
                 ((vector '%select x index l) ; select x at index in l
                   (let ((d-index (evaluate index env)))
                     (let ((d-lst (evaluate l env)))
-                      (let ((atoms-rest (cdr atoms)))
-                          (if (or (null? d-lst) (>= d-index (length d-lst)))
-                              (loop (set-rest work) ΔE)
-                              (loop (set-add (set-rest work) (cons atoms-rest (hash-set env x (list-ref d-lst d-index)))) ΔE))))))
+                      (if (or (null? d-lst) (>= d-index (length d-lst)))
+                          (loop (set-rest work) ΔE)
+                          (loop (set-add (set-rest work) (fire-state atoms-rest (hash-set env x (list-ref d-lst d-index)) ptuples)) ΔE)))))
                 ((vector '%index-of x index l) ; index of x in l
                   (let ((d-x (evaluate x env)))
                     (let ((d-lst (evaluate l env)))
-                      (let ((atoms-rest (cdr atoms)))
-                        (loop (set-add (set-rest work) (cons atoms-rest (hash-set env index (index-of d-lst d-x)))) ΔE))))) ; only finds first index
+                      (loop (set-add (set-rest work) (fire-state atoms-rest (hash-set env index (index-of d-lst d-x)) ptuples)) ΔE)))) ; only finds first index
                 ((vector '= p q)
-                  (let ((atoms-rest (cdr atoms)))
                     (let ((pp (evaluate-unquoted p env)))
                       (let ((qq (evaluate-unquoted q env)))
                         (let ((env* (unify-terms pp qq env)))
                         (if env*
-                            (loop (set-add (set-rest work) (cons atoms-rest env*)) ΔE)
-                            (loop (set-rest work) ΔE)))))))
+                            (loop (set-add (set-rest work) (fire-state atoms-rest env* ptuples)) ΔE)
+                            (loop (set-rest work) ΔE))))))
                 ((vector '*Recent* p)
-                  (let ((work (match-predicate p (cdr atoms) delta-tuples env (set-rest work))))
-                    (loop work ΔE)))
+                  (let ((new-work (match-predicate p atoms-rest delta-tuples env ptuples)))
+                    (loop (set-union (set-rest work) new-work) ΔE)))
                 (_ 
-                  (let ((work (match-predicate av (cdr atoms) E env (set-rest work))))
-                    (loop work ΔE)))
+                  (let ((new-work (match-predicate av atoms-rest E env ptuples)))
+                    (loop (set-union (set-rest work) new-work) ΔE)))
                   )))))))
 
-(define (match-predicate av remaining-preds E env work)
-  (let e-loop ((E E) (work-acc work))
+(define (match-predicate av remaining-preds E env ptuples)
+  (let e-loop ((E E) (work-acc (set)))
     (if (set-empty? E)
         work-acc
         (let ((ev (set-first E)))
           (let ((env* (unify-atoms av ev env)))
             ;(when m (printf "unify result: ~v\n" m))
             (if env*
-                (e-loop (set-rest E) (set-add work-acc (cons remaining-preds env*)))
+                (e-loop (set-rest E) (set-add work-acc (fire-state remaining-preds env* (set-add ptuples ev))))
                 (e-loop (set-rest E) work-acc)))))))
 
 (define (sort-tuples tuples)

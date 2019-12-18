@@ -9,6 +9,8 @@
 (define r1 (:- #(Reachable x y)    #(Link x y)))
 (define r2 (:- #(Reachable x y)    #(Link x z) #(Reachable z y)))
 
+; ADD WORKLOAD
+
 (define P (set r1 r2))
 (define E (set #(Link 'a 'b) #(Link 'b 'c) #(Link 'c 'c) #(Link 'c 'd)))
 (define deltas (list
@@ -37,5 +39,5 @@
   (add-tuple #(Link 'z 'a))
 ))
 
-(correctness-test P E (list solve-naive solve-semi-naive) deltas)
+(correctness-test P E (list solve-naive solve-semi-naive solve-incremental) deltas)
 (performance-test P E (list solve-naive solve-semi-naive solve-incremental) deltas)

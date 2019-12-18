@@ -1,0 +1,2 @@
+Datalog taint analysis: Debreach, Paulsen (1909....pdf)
+Metaprogramming: Declarative Reconfigurable Trust Management, Marczak (lbtrust.pdf)

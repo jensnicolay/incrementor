@@ -18,7 +18,8 @@
         (if (set-empty? rules) ; Check whether all rules have been traversed as far as needed.
             derived-tuples
             (let ((rule (set-first rules)))
-              (let ((derived-tuples-for-rule (fire-rule rule derived-tuples (set)))) ; Fire the first rule.
+              (let ((derived-tuples-for-rule (for/set ((fr (in-set (fire-rule rule derived-tuples (set)))))
+                                                (car fr)))) ; drop provenance
                 (set! num-derived-tuples (+ num-derived-tuples (set-count derived-tuples-for-rule)))
                 (loop (set-rest rules) (set-union derived-tuples derived-tuples-for-rule))))))) ; Accumulate all derived tuples.
 

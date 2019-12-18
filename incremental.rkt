@@ -1,54 +1,79 @@
 #lang racket 
 
 (require "datalog.rkt")
+(require "provenance.rkt")
 (provide solve-incremental)
 
 (struct stratum (edb-rules semi-naive-rules-idb p->r-edb p->r-idb) #:transparent)
+
+(define (update-provenance provenance tuple provenance-product)
+  (if (set-member? provenance-product tuple) ; remove direct recursion
+      provenance
+      (let ((current-prov (hash-ref provenance tuple (set))))
+        (let ((updated-prov (add-product current-prov provenance-product))) ; remember: do not recursively simplify here (only top-level absorption + direct recursion removal): need to have "raw" provenance!
+          ;(printf "update prov ~a ~a\n~a -> ~a\n\n" tuple provenance-product current-prov updated-prov)
+          (hash-set provenance tuple updated-prov)))))
+
 
 (define (solve-incremental P E)
 
   (define strata (map annotate-stratum (stratify P)))
 
-  (define (solve E0)
+  (define (solve-incremental-initial E0) ; E0 are the initial EDBs
 
     (define num-derived-tuples 0)
+    ;(define provenance (hash)) ; TODO: why not do prov per stratum (smaller, faster maps)?
+    (define provenance-simplified ; TODO: insight: only add incrementality for intial solve (i.e., no deltas)
+      (for/hash ((tuple-add (in-set E0)))
+        (values tuple-add (set (set tuple-add)))))
 
-    (define (stratum-rule-loop strat tuples) ; per stratum, initial
+    ;(printf "initial prov:\n")
+    ;(print-map provenance)
+    ; TODO: more general: provenance over strata or per stratum?
+
+    (define (stratum-rule-loop strat tuples provenance) ; per stratum, initial
 
       (define edb-rules (stratum-edb-rules strat))
       (define semi-naive-rules-idb (stratum-semi-naive-rules-idb strat))
       (define p->r (stratum-p->r-idb strat))
       
-      (let delta-loop ((delta-rules edb-rules) (tuples tuples) (previous-delta-tuples tuples))
+      (let delta-loop ((delta-rules edb-rules) (tuples tuples) (previous-delta-tuples tuples) (provenance provenance))
         ;(printf "delta rules :~a\n" delta-rules)
-        (let delta-rule-loop ((rules* delta-rules) (delta-tuples (set)))
+        (let delta-rule-loop ((rules* delta-rules) (delta-tuples (set)) (provenance provenance))
           (if (set-empty? rules*)
             (let ((real-delta-tuples (set-subtract delta-tuples tuples))) ; TODO?: full tuples set subtr
               ;(printf "real-delta-tuples ~a\n" real-delta-tuples)
               (if (set-empty? real-delta-tuples)
-                  tuples
-                  (delta-loop (select-rules-for-tuples real-delta-tuples p->r) (set-union tuples real-delta-tuples) real-delta-tuples)))
+                  (values tuples provenance)
+                  (delta-loop (select-rules-for-tuples real-delta-tuples p->r) (set-union tuples real-delta-tuples) real-delta-tuples provenance)))
             (let ((rule (set-first rules*)))
-              (let ((derived-tuples-for-rule (fire-rule rule tuples previous-delta-tuples)))
-                ;(printf "fired ~a got ~a\n" rule derived-tuples-for-rule)
-                (set! num-derived-tuples (+ num-derived-tuples (set-count derived-tuples-for-rule)))
-                (delta-rule-loop (set-rest rules*) (set-union delta-tuples derived-tuples-for-rule))))))))
+              (let ((derived-tuples-with-provenance-for-rule (fire-rule rule tuples previous-delta-tuples)))
+                ;(printf "fired ~a got ~a\n" rule derived-tuples-with-provenance-for-rule)
+                (let-values (((derived-tuples-for-rule provenance)
+                    (for/fold ((derived-tuples-for-rule (set)) (provenance provenance)) ((fr (in-set derived-tuples-with-provenance-for-rule)))
+                      (match-let (((cons derived-tuple prov) fr))
+                        (values (set-add derived-tuples-for-rule derived-tuple) (update-provenance provenance derived-tuple prov))))))
+                  (set! num-derived-tuples (+ num-derived-tuples (set-count derived-tuples-for-rule)))
+                  (delta-rule-loop (set-rest rules*) (set-union delta-tuples derived-tuples-for-rule) provenance))))))))
 
 
-    (define (stratum-loop S E)
+    (define (stratum-loop S E provenance)
       ;(printf "\ni stratum ~a/~a with ~a tuples\n" (- (set-count strata) (set-count S)) (set-count strata) (set-count E))
       (if (null? S)
-          (solver-result E num-derived-tuples (make-delta-solver E)) ; TODO: fix: E means "all tuples" here!
-          (let ((E* (stratum-rule-loop (car S) E)))
-            (stratum-loop (cdr S) E*))))
+          (solver-result E num-derived-tuples (make-delta-solver E0 provenance)) ; E0 are the initial EDBs, prov keys are all derived IDBs
+          (let-values (((E* provenance) (stratum-rule-loop (car S) E provenance)))
+            (stratum-loop (cdr S) E* provenance))))
 
-    (stratum-loop strata E0)) ; end solve
+    (stratum-loop strata E0 (hash))
+  ) ; end solve initial
 
-  (define (solve-incremental-delta E tuples-add)
+  (define (solve-incremental-delta E0 provenance tuples-add* tuples-remove*) ; E0 are previous initial EDBs, prov keys are all derived IDBs,  tuples-add/remove are initial delta EDBs
     
     (define num-derived-tuples 0)
 
-    (define (stratum-rule-loop strat tuples real-delta-tuples-edb) ; per stratum, incremental
+    (define (stratum-rule-loop strat tuples real-delta-tuples-edb provenance) ; per stratum, incremental
+
+      ;(printf "stratum-rule-loop real-delta-tuples-edb ~a\n" real-delta-tuples-edb)
 
       (define edb-rules (stratum-edb-rules strat))
       (define semi-naive-rules-idb (stratum-semi-naive-rules-idb strat))
@@ -57,52 +82,78 @@
 
       ; TODO (here, elsewhere?): adding (re)discovered tuples immediately to a current `all-tuples` set (quicker convergence?)
 
-      (let delta-rule-loop-edb ((edb-rules* (select-rules-for-tuples real-delta-tuples-edb p->r-edb)) (delta-tuples (set)))
+      ;(printf "rules containing EDBs: ~a\n" edb-rules)
+      ;(printf "selected rules: ~a\n" (select-rules-for-tuples real-delta-tuples-edb p->r-edb))
+
+      (let delta-rule-loop-edb ((edb-rules* (select-rules-for-tuples real-delta-tuples-edb p->r-edb)) (delta-tuples (set)) (provenance provenance))
         (if (set-empty? edb-rules*)
           
           (let ((real-delta-tuples-idb (set-subtract delta-tuples tuples))) ; TODO?: full tuples set subtr
             ;(printf "*real-delta-tuples-idb ~a\n" real-delta-tuples-idb)
-            (let delta-loop-idb ((delta-rules (select-rules-for-tuples real-delta-tuples-idb p->r-idb)) (tuples (set-union tuples real-delta-tuples-edb real-delta-tuples-idb)) (previous-delta-tuples real-delta-tuples-idb))
+            (let delta-loop-idb ((delta-rules (select-rules-for-tuples real-delta-tuples-idb p->r-idb)) (tuples (set-union tuples real-delta-tuples-edb real-delta-tuples-idb)) (previous-delta-tuples real-delta-tuples-idb) (provenance provenance) (tuples-added real-delta-tuples-idb))
               ;(printf "tuples: (~a) ~a\n" (set-count tuples) tuples)
-              (let delta-rule-loop-idb ((idb-rules* delta-rules) (delta-tuples (set)))
+              (let delta-rule-loop-idb ((idb-rules* delta-rules) (delta-tuples (set)) (provenance provenance))
                 (if (set-empty? idb-rules*)
                   (let ((real-delta-tuples-idb (set-subtract delta-tuples tuples)))
                     ;(printf "real-delta-tuples-idb ~a\n" real-delta-tuples-idb)
                     (if (set-empty? real-delta-tuples-idb)
-                        tuples
-                        (delta-loop-idb (select-rules-for-tuples real-delta-tuples-idb p->r-idb) (set-union tuples real-delta-tuples-idb) real-delta-tuples-idb)))
+                        (values tuples provenance tuples-added)
+                        (delta-loop-idb (select-rules-for-tuples real-delta-tuples-idb p->r-idb) (set-union tuples real-delta-tuples-idb) real-delta-tuples-idb provenance (set-union tuples-added real-delta-tuples-idb))))
                   (let ((rule (set-first idb-rules*)))
-                    (let ((derived-tuples-for-rule (fire-rule rule tuples previous-delta-tuples)))
-                      ;(printf "fired ~a got ~a\n" rule derived-tuples-for-rule)
-                      (set! num-derived-tuples (+ num-derived-tuples (set-count derived-tuples-for-rule)))
-                      (delta-rule-loop-idb (set-rest idb-rules*) (set-union delta-tuples derived-tuples-for-rule))))))))
+                    (let ((derived-tuples-with-provenance-for-rule (fire-rule rule tuples previous-delta-tuples)))
+                      ;(printf "fired ~a got ~a\n" rule derived-tuples-with-provenance-for-rule)
+                      (let-values (((derived-tuples-for-rule provenance)
+                          (for/fold ((derived-tuples-for-rule (set)) (provenance provenance)) ((fr (in-set derived-tuples-with-provenance-for-rule)))
+                            (match-let (((cons derived-tuple prov) fr))
+                              (values (set-add derived-tuples-for-rule derived-tuple) (update-provenance provenance derived-tuple prov))))))
+                        (set! num-derived-tuples (+ num-derived-tuples (set-count derived-tuples-for-rule)))
+                        (delta-rule-loop-idb (set-rest idb-rules*) (set-union delta-tuples derived-tuples-for-rule) provenance))))))))
                       
             (let ((rule (set-first edb-rules*)))
-                    (let ((derived-tuples-for-rule (fire-rule rule tuples real-delta-tuples-edb)))
-                      ;(printf "fired ~a got ~a\n" rule derived-tuples-for-rule)
-                      (set! num-derived-tuples (+ num-derived-tuples (set-count derived-tuples-for-rule)))
-                      (delta-rule-loop-edb (set-rest edb-rules*) (set-union delta-tuples derived-tuples-for-rule))))
-                      )))
+              (let ((derived-tuples-with-provenance-for-rule (fire-rule rule tuples real-delta-tuples-edb)))
+                ;(printf "fired ~a got ~a\n" rule derived-tuples-with-provenance-for-rule)
+                (let-values (((derived-tuples-for-rule provenance)
+                    (for/fold ((derived-tuples-for-rule (set)) (provenance provenance)) ((fr (in-set derived-tuples-with-provenance-for-rule)))
+                      (match-let (((cons derived-tuple prov) fr))
+                        (values (set-add derived-tuples-for-rule derived-tuple) (update-provenance provenance derived-tuple prov))))))
+                  (set! num-derived-tuples (+ num-derived-tuples (set-count derived-tuples-for-rule)))
+                  (delta-rule-loop-edb (set-rest edb-rules*) (set-union delta-tuples derived-tuples-for-rule) provenance)))
+                  ))))
 
-    (define (stratum-loop S E)
-        ;(printf "\ni stratum ~a/~a with ~a tuples\n" (- (set-count strata) (set-count S)) (set-count strata) (set-count E))
+    (define (stratum-loop S E provenance tuples-add E0)
+        ;(printf "\ni stratum ~a/~a with ~a tuples, tuples-add ~a\n" (- (set-count strata) (set-count S)) (set-count strata) (set-count E) tuples-add)
+        ;(printf "provenance stratum\n") (print-map provenance) (newline)
         (if (null? S)
-            (solver-result E num-derived-tuples (make-delta-solver E))
-            (let ((E* (stratum-rule-loop (car S) E tuples-add)))
-              (stratum-loop (cdr S) E*))))
+            (solver-result E num-derived-tuples (make-delta-solver E0 provenance)) ; TODO: redundant (set-subtract ...)
+            (let-values (((E* provenance tuples-added) (stratum-rule-loop (car S) E tuples-add provenance)))
+              (stratum-loop (cdr S) E* provenance tuples-added E0))))
 
-    (stratum-loop strata E))
+    (let ((intersection (set-intersect tuples-add* tuples-remove*))) ; TODO: we first remove, and then add: check whether/how this matters!
+      (let ((tuples-add (set-subtract tuples-add* intersection)))
+        (let ((tuples-remove (set-subtract tuples-remove* intersection)))
+          ;(printf "\n\nSOLVING INCREMENTAL-DELTA\nadd ~a\nremove ~a\n" tuples-add tuples-remove)
+          ;(printf "old provenance\n") (print-map provenance) (newline)
+          (let ((provenance* (remove-variables-from-system provenance tuples-remove)))
+            ;(printf "provenance after remove\n") (print-map provenance*) (newline)
+            (let ((E0-removed (set-subtract E0 tuples-remove)))
+              ; TODO: check performance impact of keeping separate (redundant) list of all tuples (iso. keeping them as union of keys)
+              (stratum-loop (cdr strata) (set-union E0-removed (list->set (hash-keys provenance*))) provenance* tuples-add (set-union E0-removed tuples-add)))))))) ; end solve-i-delta
 
-  (define (make-delta-solver E) ; TODO: fix: E are all tuples here, not only (original) EDB (= E0)
-    (lambda (deltas)
+  (define (make-delta-solver E0 provenance) ; E0 are initial EDBs, prov keys are all derived IDBs
+    ;(printf "MAKE-D-SOLVER\nEDB ~a\nIDB ~a\n" E0 (hash-keys provenance))
+    (lambda (deltas) ; deltas are initial EDBs that are added/removed
       (let-values (((tuples-add tuples-remove)
         (for/fold ((tuples-add (set)) (tuples-remove (set))) ((delta (in-list deltas)))
           (match delta
             ((add-tuple tuple) (values (set-add tuples-add tuple) tuples-remove))
             ((remove-tuple tuple) (values tuples-add (set-add tuples-remove tuple)))))))
-        (solve-incremental-delta E tuples-add))))
+        (solve-incremental-delta E0 provenance tuples-add tuples-remove))))
 
-  (solve E))
+  (solve-incremental-initial E))
+
+(define (print-map m)
+  (for (((key value) (in-hash m)))
+    (printf "~a -> ~a\n" key value)))
 
 ; rewrites IDB preds in rules that contain them
 (define (rewrite-semi-naive-idb rules)

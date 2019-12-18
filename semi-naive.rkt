@@ -29,7 +29,8 @@
                   tuples
                   (rule-loop (select-rules-for-tuples real-delta-tuples p->r) (set-union tuples real-delta-tuples) real-delta-tuples)))
             (let ((rule (set-first rules*)))
-              (let ((derived-tuples-for-rule (fire-rule rule tuples previous-delta-tuples)))
+              (let ((derived-tuples-for-rule (for/set ((fr (in-set (fire-rule rule tuples previous-delta-tuples))))
+                                                (car fr)))) ; drop provenance
                 ; (printf "fired ~a got ~a\n" rule derived-tuples-for-rule)
                 (set! num-derived-tuples (+ num-derived-tuples (set-count derived-tuples-for-rule)))
                 (delta-rule-loop (set-rest rules*) (set-union delta-tuples derived-tuples-for-rule))))))))

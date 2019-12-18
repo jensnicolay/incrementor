@@ -17,15 +17,15 @@
 
   (define (check-equal-tuples r1 r2)
     (unless (equal? (solver-result-tuples r1) (solver-result-tuples r2))
-      (error "tuples not equal" (sort-tuples (solver-result-tuples r1)) (sort-tuples (solver-result-tuples r2)))))
+      (error 'check-equal-tuples "tuples not equal\n~a\n~a\n" (sort-tuples (solver-result-tuples r1)) (sort-tuples (solver-result-tuples r2)))))
 
   (define (check-lesseq-derivations* rs)
     (for ((r2 (in-list (cdr rs))))
       (check-lesseq-derivations (car rs) r2)))
 
   (define (check-lesseq-derivations r1 r2)
-    (unless (> (solver-result-num-derived-tuples r1) (solver-result-num-derived-tuples r2))
-      (error "num derived tuples not <=")))
+    (unless (>= (solver-result-num-derived-tuples r1) (solver-result-num-derived-tuples r2))
+      (error 'check-lesseq-derivations "num derived tuples not <=: ~a ~a" (solver-result-num-derived-tuples r1) (solver-result-num-derived-tuples r2))))
 
 
   (define initial-solver-results
@@ -85,6 +85,5 @@
                   (loop (cdr deltas) (solver-result-delta-solver delta-solver-result) (cons (data-point (timer) delta-solver-result) results)))))))))
 
   (single-step)
-  ;(cumulative) WHY?
 
 )
