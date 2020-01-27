@@ -27,12 +27,15 @@
     (unless (>= (solver-result-num-derived-tuples r1) (solver-result-num-derived-tuples r2))
       (error 'check-lesseq-derivations "num derived tuples not <=: ~a ~a" (solver-result-num-derived-tuples r1) (solver-result-num-derived-tuples r2))))
 
+  ;;;;;;;;;;;;;;;;
+
+  (printf "=========initial run\n")
 
   (define initial-solver-results
     (map (lambda (solver)
             (solver P E0))
           solvers))
-
+        
   (check-equal-tuples* initial-solver-results)
   (check-lesseq-derivations* initial-solver-results)
 
@@ -58,11 +61,11 @@
           (check-equal-tuples* single-delta-solver-results)
           (check-lesseq-derivations* single-delta-solver-results)
 
-          (printf "===acc deltas ~a\n" (set-count deltas-acc*))
-          (define all-deltas-solver-results (map (lambda (delta-solver) (printf ">>>\n") (delta-solver deltas-acc*)) delta-solvers0))
-          (check-equal-tuples (car full-solver-results) (car all-deltas-solver-results))
-          (check-equal-tuples* all-deltas-solver-results)
-          (check-lesseq-derivations* all-deltas-solver-results)
+          ; (printf "===acc deltas ~a\n" (set-count deltas-acc*))
+          ; (define all-deltas-solver-results (map (lambda (delta-solver) (printf ">>>\n") (delta-solver deltas-acc*)) delta-solvers0))
+          ; (check-equal-tuples (car full-solver-results) (car all-deltas-solver-results))
+          ; (check-equal-tuples* all-deltas-solver-results)
+          ; (check-lesseq-derivations* all-deltas-solver-results)
 
           (delta-loop (cdr deltas) deltas-acc* (map solver-result-delta-solver single-delta-solver-results)))))))
 

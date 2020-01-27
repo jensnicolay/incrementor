@@ -3,7 +3,7 @@
 (require "datalog.rkt")
 (provide solve-semi-naive)
 
-(struct stratum (edb-rules semi-naive-rules p->r) #:transparent)
+(struct stratum (edb-rules p->r) #:transparent)
 
 (define (solve-semi-naive P E)
 
@@ -16,7 +16,6 @@
     (define (stratum-rule-loop strat tuples) ; per stratum
 
       (define edb-rules (stratum-edb-rules strat))
-      (define semi-naive-rules (stratum-semi-naive-rules strat))
       (define p->r (stratum-p->r strat))
       
       (let rule-loop ((delta-rules edb-rules) (tuples tuples) (previous-delta-tuples tuples))
@@ -128,4 +127,4 @@
   (define edb-rules (get-edb-rules stratum-rules))
   ;(printf "edb-rules ~a\n" edb-rules)
 
-  (stratum edb-rules semi-naive-rules p->r))
+  (stratum edb-rules p->r))

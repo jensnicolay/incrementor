@@ -167,6 +167,8 @@
 
   (define G-pred (precedence-lgraph P))   ; Compute a precedence graph based on dependencies between the predicates.
   (define v2cid (lscc-map G-pred))        ; Determine strongly connected components.
+  (printf "G-pred: ~v\n" G-pred)
+  (printf "v2cid: ~v\n" v2cid)
 
   (define G-red
     (for/fold ((R (hash))) (((from edges) (in-hash G-pred)))
@@ -175,17 +177,18 @@
           (hash-set R from-cid (set-add (hash-ref R from-cid) (hash-ref v2cid (ledge-to edge))))))))
 
   (define cid-sorted (topo-sort G-red))
-  ;(printf "topo: ~v\n" cid-sorted)
+  (printf "G-red: ~v\n" G-red)
+  (printf "topo: ~v\n" cid-sorted)
 
   (define cid2C (for/fold ((R (hash))) (((v cid) (in-hash v2cid)))
                         (hash-set R cid (set-add (hash-ref R cid (set)) v))))
-  ;(printf "cid2C: ~v\n" cid2C)
+  (printf "cid2C: ~v\n" cid2C)
   (map (lambda (cid) (hash-ref cid2C cid)) cid-sorted))
 
 ; returns list of sets of rules
 (define (stratify P)
   (define S (strata P))
-  ;(printf "strata: ~v\n" S)
+  (printf "strata: ~v\n" S)
 
   (map (lambda (Preds)
           (for/fold ((R (set))) ((Pred (in-set Preds)))
@@ -292,7 +295,7 @@
                     (_
                       (let e-loop ((E E))
                         (if (set-empty? E)
-                            (loop (set-add (set-rest work) (fire-state atoms-rest env ptuples)) ΔE)
+                            (loop (set-add (set-rest work) (fire-state atoms-rest env (set-add ptuples av))) ΔE) ; 
                             (let* ((ev (set-first E))
                                    (env* (unify-atoms av ev env)))
                                 ;(printf "¬ unify result ~a ~a: ~v\n" av ev m)

@@ -65,6 +65,21 @@
 ;                   (values (set (set pred)) P))))) ; this acts as an EDB -> EDB ; TODO simplify to `pred` iso. `(set (set pred))`?
 ;           (values simplified (hash-set P** pred simplified))))))
 
+; ORIGINAL BEFORE ¬
+; (define (remove-variables-from-system system xs)
+;   (let var-loop ((system (hash->list system)) (xs xs))
+;     (if (set-empty? xs)
+;         (make-immutable-hash system)
+;         (let ((fully-removed-var (set-first xs))) ; only this var is guaranteed to be fully removed after system loop
+;           (let system-loop ((system system) (system* '()) (xs xs))
+;             (if (null? system)
+;                 (var-loop system* (set-remove xs fully-removed-var)) ; TODO test by keeping additional "work remove list"
+;                 (let ((prov-kv (car system)))
+;                   (let ((prov* (remove-variables (cdr prov-kv) (set-add xs (car prov-kv))))) ; also remove circular stuff
+;                     (if (set-empty? prov*)
+;                         (system-loop (cdr system) system* (set-add xs (car prov-kv))) ; remove from system, add var to remove-set
+;                         (system-loop (cdr system) (cons (cons (car prov-kv) prov*) system*) xs))))))))))
+
 (define (remove-variables-from-system system xs)
   (let var-loop ((system (hash->list system)) (xs xs))
     (if (set-empty? xs)

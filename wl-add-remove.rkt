@@ -8,10 +8,12 @@
 
 (define r1 (:- #(Reachable x y)    #(Link x y)))
 (define r2 (:- #(Reachable x y)    #(Link x z) #(Reachable z y)))
+(define r3 (:- #(Node x)          #(Link x y)))
+(define r4 (:- #(Node y)          #(Link x y)))
 
 ; REMOVE WORKLOAD
 
-(define P (set r1 r2))
+(define P (set r1 r2 r3 r4))
 (define E (set))
 (define deltas (list
   (add-tuple #(Link 'a 'b))
@@ -30,6 +32,7 @@
   (remove-tuple #(Link 'b 'c))
   (add-tuple #(Link 'k 'l))
   (add-tuple #(Link 'j 'k))
+  (add-tuple #(Link 'k 'k))
   (add-tuple #(Link 'i 'j))
   (add-tuple #(Link 'o 'p))
   (remove-tuple #(Link 'h 'i))
@@ -45,6 +48,7 @@
   (remove-tuple #(Link 'p 'q))
   (remove-tuple #(Link 'o 'p))
   (add-tuple #(Link 'v 'x))
+  (remove-tuple #(Link 'k 'k))
   (remove-tuple #(Link 's 'u))
   (remove-tuple #(Link 'm 'n))
   (remove-tuple #(Link 'l 'm))
