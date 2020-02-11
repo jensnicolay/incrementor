@@ -12,17 +12,16 @@
 (define r4 (:- #(Node y)          #(Link x y)))
 (define r5 (:- #(Unreachable x y) #(Node x) #(Node y) (¬ #(Reachable x y))))
 
-(define P (set r1 r2 r3 r4))
-; (define P (set r1 r2 r3 r4 r5))
+(define P (set r1 r2 r3 r4 r5))
 (define E (set))
 
 (define deltas (list
   (add-tuple #(Link 'a 'b))
-  ; (add-tuple #(Link 'b 'c))
-  ; (add-tuple #(Link 'c 'c))
-  ; (add-tuple #(Link 'c 'd))
-  ; (add-tuple #(Link 'd 'e))
-  ; (add-tuple #(Link 'e 'f))
+  (add-tuple #(Link 'b 'c))
+  (add-tuple #(Link 'c 'c))
+  (add-tuple #(Link 'c 'd))
+  (add-tuple #(Link 'd 'e))
+  (add-tuple #(Link 'e 'f))
   ; (remove-tuple #(Link 'e 'f))
   ; (add-tuple #(Link 'f 'g))
   ; (add-tuple #(Link 'g 'h))

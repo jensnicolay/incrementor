@@ -163,7 +163,7 @@
 (define (conc-eval e)
   (let ((E (ast->tuples e)))
     (printf "~a\n" E)
-    (match-let (((solver-result tuples _ num-derived-tuples*) (solve-semi-naive P E)))
+    (match-let (((solver-result tuples num-derived-tuples* _) (solve-semi-naive P E)))
       (set! num-derived-tuples (+ num-derived-tuples num-derived-tuples*))
       (unless (= 1 (length (sequence->list (sequence-filter (lambda (a) (eq? 'Root (atom-name a))) (in-set tuples)))))
         (error 'conc-eval "wrong number of Roots"))

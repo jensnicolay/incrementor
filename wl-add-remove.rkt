@@ -11,8 +11,6 @@
 (define r3 (:- #(Node x)          #(Link x y)))
 (define r4 (:- #(Node y)          #(Link x y)))
 
-; REMOVE WORKLOAD
-
 (define P (set r1 r2 r3 r4))
 (define E (set))
 (define deltas (list

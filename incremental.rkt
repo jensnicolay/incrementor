@@ -33,7 +33,7 @@
 
     (define (stratum-rule-loop strat tuples provenance) ; per stratum, initial
 
-      (define edb-rules (stratum-edb-rules strat))
+      (define edb-rules (stratum-edb-rules strat)) ; TODO: maybe also involve select-rules-f-t (but only select from edb-only rules)
       (define p->r (stratum-p->r-idb strat))
       
       (let delta-loop ((delta-rules edb-rules) (tuples tuples) (previous-delta-tuples tuples) (provenance provenance))
@@ -68,21 +68,23 @@
     (stratum-loop strata E0 (hash))
   ) ; end solve initial
 
+
   (define (solve-incremental-delta E0 provenance tuples-add* tuples-remove*) ; E0 are previous initial EDBs, prov keys are all derived IDBs,  tuples-add/remove are initial delta EDBs
     
     (define num-derived-tuples 0)
 
     (define (stratum-rule-loop strat tuples real-delta-tuples-edb tuples-removed-glob provenance) ; per stratum, incremental
 
-      (printf "stratum-rule-loop real-delta-tuples-edb ~a\n" real-delta-tuples-edb)
+      (printf "\nstratum-rule-loop real-delta-tuples-edb ~a\n" real-delta-tuples-edb)
 
       (define p->r-edb (stratum-p->r-edb strat))
       (define p->r-edb¬ (stratum-p->r-edb¬ strat))
       (define p->r-idb (stratum-p->r-idb strat))
 
+
       ; TODO (here, elsewhere?): adding (re)discovered tuples immediately to a current `all-tuples` set (quicker convergence?)
 
-      (printf "tuples removed glob: ~a\n" tuples-removed-glob)
+      ; (printf "tuples removed glob: ~a\n" tuples-removed-glob)
       ; (printf "p->r-edb: ~a\n" p->r-edb)
       ; (printf "p->r-edb¬: ~a\n" p->r-edb¬)
       ; (printf "p->r-idb: ~a\n" p->r-idb)
@@ -93,9 +95,15 @@
           (select-rules-for-tuples tuples-removed-glob p->r-edb¬))) ; TODO: tuples-removed-glob is not scoped to stratum
 
       (printf "selected EDB rules: ~a\n" edb-rules*)
-      (printf "provenance ~a\n" provenance)
+      (printf "provenance\n") (print-map provenance)
+      (define neg-deps (list->set (set-map real-delta-tuples-edb ¬)))
+      (printf "neg deps ~a\n" neg-deps)
 
-      (let delta-rule-loop-edb ((edb-rules* edb-rules*) (delta-tuples (set)) (provenance provenance))
+      ; remove tuples that depend on absence of tuples added in stratum below
+      (define provenance* (remove-variables-from-system provenance neg-deps))
+      (printf "provenance after removing neg deps\n") (print-map provenance*)
+
+      (let delta-rule-loop-edb ((edb-rules* edb-rules*) (delta-tuples (set)) (provenance provenance*))
         (if (set-empty? edb-rules*)
           
           (let ((real-delta-tuples-idb (set-subtract delta-tuples tuples))) ; TODO?: full tuples set subtr

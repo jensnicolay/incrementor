@@ -162,12 +162,29 @@
 
   R)
 
+(define (topo-sort2 G)
+  (let ((cids (list->set (hash-keys G))))
+    (let ((non-sources (for/fold ((R (set))) ((values (in-list (hash-values G))))
+                        (set-union R values))))
+      (let ((sources (set-subtract cids non-sources)))
+        ;(printf "non-sources ~a non-sinks ~a sources ~a\n" non-sources non-sinks sources)
+        (let loop ((layer-nodes sources) (visited (set)) (layers '()))
+          ;(printf "layer ~a visited ~a layers ~a\n" layer visited layers)
+          (let ((layer (for/set ((cid (in-set layer-nodes)) #:unless (set-member? visited cid)) cid)))
+            (if (set-empty? layer)
+                (reverse layers)
+                (let ((layers* (cons layer layers)))
+                  (let ((visited* (set-union visited layer)))
+                    (let ((layer-nodes* (for/fold ((R (set))) ((cid (in-set layer))) (hash-ref G cid (set)))))
+                      (loop layer-nodes* visited* layers*)))))))))))
+
+
 ; returns list of sets of rule names
 (define (strata P)
 
   (define G-pred (precedence-lgraph P))   ; Compute a precedence graph based on dependencies between the predicates.
-  (define v2cid (lscc-map G-pred))        ; Determine strongly connected components.
   (printf "G-pred: ~v\n" G-pred)
+  (define v2cid (lscc-map G-pred))        ; Determine strongly connected components.
   (printf "v2cid: ~v\n" v2cid)
 
   (define G-red
@@ -176,14 +193,14 @@
         (for/fold ((R (hash-set R from-cid (hash-ref R from-cid (set))))) ((edge (in-set edges)))
           (hash-set R from-cid (set-add (hash-ref R from-cid) (hash-ref v2cid (ledge-to edge))))))))
 
-  (define cid-sorted (topo-sort G-red))
   (printf "G-red: ~v\n" G-red)
+  (define cid-sorted (topo-sort2 G-red))
   (printf "topo: ~v\n" cid-sorted)
 
   (define cid2C (for/fold ((R (hash))) (((v cid) (in-hash v2cid)))
                         (hash-set R cid (set-add (hash-ref R cid (set)) v))))
   (printf "cid2C: ~v\n" cid2C)
-  (map (lambda (cid) (hash-ref cid2C cid)) cid-sorted))
+  (map (lambda (cids) (for/fold ((R (set))) ((cid (in-set cids))) (set-union R (hash-ref cid2C cid)))) cid-sorted))
 
 ; returns list of sets of rules
 (define (stratify P)
@@ -292,16 +309,17 @@
                         (if env* ; Test whether unification succeeded.
                             (loop (set-rest work) ΔE)
                             (loop (set-add (set-rest work) (fire-state atoms-rest env ptuples)) ΔE))))
-                    (_
-                      (let e-loop ((E E))
+                    (_ ; this "datalog": allows unsafe negation, only restriction is absence of distinguished (= from head) vars which are not pos bound
+                      (let e-loop ((E (for/set ((ev (in-set E)) #:when (eq? (atom-name ev) (atom-name av))) ev)))
                         (if (set-empty? E)
-                            (loop (set-add (set-rest work) (fire-state atoms-rest env (set-add ptuples av))) ΔE) ; 
+                            (loop (set-add (set-rest work) (fire-state atoms-rest env (set-add ptuples (¬ (bind-fact av env))))) ΔE)
                             (let* ((ev (set-first E))
                                    (env* (unify-atoms av ev env)))
                                 ;(printf "¬ unify result ~a ~a: ~v\n" av ev m)
                               (if env*
                                   (loop (set-rest work) ΔE)
-                                  (e-loop (set-rest E)))))))))
+                                  (let ((negterm (bind-fact ev env)))
+                                    (e-loop (set-rest E))))))))))
                 ((vector 'DEBUG name)
                   (printf "~a: about to match ~a with ~a\n\n" name (cadr atoms) env)
                   (loop (set-add (set-rest work) (fire-state atoms-rest env ptuples)) ΔE))
@@ -350,7 +368,9 @@
           (let ((env* (unify-atoms av ev env)))
             ;(when m (printf "unify result: ~v\n" m))
             (if env*
-                (e-loop (set-rest E) (set-add work-acc (fire-state remaining-preds env* (set-add ptuples ev))))
+              (begin
+                ;(printf "adding: ptuples ~a + ev ~a\n" ptuples ev)
+                (e-loop (set-rest E) (set-add work-acc (fire-state remaining-preds env* (set-add ptuples ev)))))
                 (e-loop (set-rest E) work-acc)))))))
 
 (define (sort-tuples tuples)
