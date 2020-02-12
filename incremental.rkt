@@ -59,7 +59,7 @@
 
 
     (define (stratum-loop S E provenance)
-      (printf "\ni stratum ~a/~a with ~a tuples\n" (- (set-count strata) (set-count S)) (set-count strata) (set-count E))
+      (printf "\nincr initial stratum ~a/~a with ~a tuples\n" (- (set-count strata) (set-count S)) (set-count strata) (set-count E))
       (if (null? S)
           (solver-result E num-derived-tuples (make-delta-solver E0 provenance)) ; E0 are the initial EDBs, prov keys are all derived IDBs
           (let-values (((E* provenance) (stratum-rule-loop (car S) E provenance)))
@@ -73,7 +73,7 @@
     
     (define num-derived-tuples 0)
 
-    (define (stratum-rule-loop strat tuples real-delta-tuples-edb provenance) ; per stratum, incremental
+    (define (stratum-rule-loop strat tuples real-delta-tuples-edb tuples-removed-glob provenance) ; per stratum, incremental
 
       (printf "\nstratum-rule-loop real-delta-tuples-edb ~a\n" real-delta-tuples-edb)
 
@@ -85,25 +85,21 @@
       ; TODO (here, elsewhere?): adding (re)discovered tuples immediately to a current `all-tuples` set (quicker convergence?)
 
       ; (printf "tuples removed glob: ~a\n" tuples-removed-glob)
-      ; (printf "p->r-edb: ~a\n" p->r-edb)
-      ; (printf "p->r-edb¬: ~a\n" p->r-edb¬)
+      (printf "p->r-edb: ~a\n" p->r-edb)
+      (printf "p->r-edb¬: ~a\n" p->r-edb¬)
       ; (printf "p->r-idb: ~a\n" p->r-idb)
 
-      ; (define edb-rules*  COMMENTED OUT: no removed-glob: check neg-deps below if tuples-removed-glob required
-      ;   (set-union
-      ;     (select-rules-for-tuples real-delta-tuples-edb p->r-edb)
-      ;     (select-rules-for-tuples tuples-removed-glob p->r-edb¬))) ; TODO: tuples-removed-glob is not scoped to stratum
-
-      (define edb-rules* (select-rules-for-tuples real-delta-tuples-edb p->r-edb))
+      (define edb-rules*
+        (set-union
+          (select-rules-for-tuples real-delta-tuples-edb p->r-edb)
+          (select-rules-for-tuples tuples-removed-glob p->r-edb¬))) ; TODO: tuples-removed-glob is not scoped to stratum
 
       (printf "selected EDB rules: ~a\n" edb-rules*)
-      (printf "provenance\n") (print-map provenance)
       (define neg-deps (list->set (set-map real-delta-tuples-edb ¬)))
-      (printf "neg deps ~a\n" neg-deps)
+      (printf "provenance before remming ~a\n" neg-deps) (print-map provenance)
 
       ; remove tuples that depend on absence of tuples added in stratum below
       (define provenance* (remove-variables-from-system provenance neg-deps))
-      (printf "provenance after removing neg deps\n") (print-map provenance*)
       
       ; UGH
       (define t (list->set (hash-keys provenance)))
@@ -147,13 +143,13 @@
                   (delta-rule-loop-edb (set-rest edb-rules*) (set-union delta-tuples derived-tuples-for-rule) provenance)))
                   ))))
 
-    (define (stratum-loop S E provenance tuples-add E0)
-        ;(printf "\ni stratum ~a/~a with ~a tuples, tuples-add ~a\n" (- (set-count strata) (set-count S)) (set-count strata) (set-count E) tuples-add)
+    (define (stratum-loop S E provenance tuples-add tuples-removed-glob E0)
+        (printf "\nincr delta stratum ~a/~a with ~a tuples, tuples-add ~a\n" (- (set-count strata) (set-count S)) (set-count strata) (set-count E) tuples-add)
         ;(printf "provenance stratum\n") (print-map provenance) (newline)
         (if (null? S)
             (solver-result E num-derived-tuples (make-delta-solver E0 provenance)) ; TODO: redundant (set-subtract ...)
-            (let-values (((E* provenance tuples-added) (stratum-rule-loop (car S) E tuples-add provenance)))
-              (stratum-loop (cdr S) E* provenance tuples-added E0))))
+            (let-values (((E* provenance tuples-added) (stratum-rule-loop (car S) E tuples-add tuples-removed-glob provenance)))
+              (stratum-loop (cdr S) E* provenance tuples-added tuples-removed-glob E0))))
 
     (let ((intersection (set-intersect tuples-add* tuples-remove*))) ; TODO: we first remove, and then add: check whether/how this matters!
       (let ((tuples-add (set-subtract tuples-add* intersection)))
@@ -161,13 +157,18 @@
           (printf "\n\nSOLVING INCREMENTAL-DELTA\nadd ~a\nremove ~a\n" tuples-add tuples-remove)
           ;(printf "old provenance\n") (print-map provenance) (newline)
           ; REMOVAL OF IDBs BASED ON + DEPS: use provenance
-          ; REMOVAL OF IDBs BASED ON - DEPS: also use provenance (!)
-          (let ((provenance* (remove-variables-from-system provenance (set-union tuples-remove tuples-add))))
-            ;(printf "provenance after remove\n") (print-map provenance*) (newline)
+          (let ((provenance* (remove-variables-from-system provenance tuples-remove)))
+
+            (printf "provenance before remming ~a\n" tuples-remove) (print-map provenance) (newline)
+            (define t (list->set (hash-keys provenance)))
+            (define t* (list->set (hash-keys provenance*)))
+            (define remmed (set-subtract t t*))
+            (printf "removed due to pos dep: ~a\n" remmed)
+            
             (let ((E0-removed (set-subtract E0 tuples-remove)))
 
                 ; TODO: check performance impact of keeping separate (redundant) list of all tuples (iso. keeping them as union of keys)
-                (stratum-loop (cdr strata) (set-union E0-removed (list->set (hash-keys provenance*))) provenance* tuples-add (set-union E0-removed tuples-add)))))))) ; end solve-i-delta
+                (stratum-loop (cdr strata) (set-union E0-removed (list->set (hash-keys provenance*))) provenance* tuples-add remmed (set-union E0-removed tuples-add)))))))) ; end solve-i-delta
 
   (define (make-delta-solver E0 provenance) ; E0 are initial EDBs, prov keys are all derived IDBs
     ;(printf "MAKE-D-SOLVER\nEDB ~a\nIDB ~a\n" E0 (hash-keys provenance))
