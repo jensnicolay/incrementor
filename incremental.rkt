@@ -92,7 +92,7 @@
       (define edb-rules*
         (set-union
           (select-rules-for-tuples real-delta-tuples-edb p->r-edb)
-          (select-rules-for-tuples tuples-removed-glob p->r-edb¬))) ; TODO: tuples-removed-glob is not scoped to stratum
+          (select-rules-for-tuples tuples-removed-glob p->r-edb¬))) ; TODO: tuples-removed-glob is not scoped to stratum; TODO 2: should have neg-only *Recent* 
 
       (printf "selected EDB rules: ~a\n" edb-rules*)
       (define neg-deps (list->set (set-map real-delta-tuples-edb ¬)))
