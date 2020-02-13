@@ -16,7 +16,7 @@
 
 
 (define (solve-incremental P E)
-  (define strata (map annotate-stratum (stratify P)))
+  (define strata (map annotate-stratum (stratify P))) 
   (solve-incremental-initial strata E))
 
 (define (solve-incremental-initial strata tuples)
@@ -73,7 +73,7 @@
   (define remmed (set-subtract tuples tuples*))
   (printf "removed due to pos dep: ~a\n" remmed)
   (define E0-removed (set-subtract E0 tuples-remove))
-  (define-values (tuples** provenance** num-derived-tuples) (stratum-loop-delta (cdr strata) (set-union E0-removed tuples*) provenance* tuples-add remmed))
+  (define-values (tuples** provenance** num-derived-tuples) (stratum-loop-delta strata (set-union E0-removed tuples*) provenance* tuples-add remmed))
   (solver-result tuples** num-derived-tuples (make-delta-solver strata (set-union E0-removed tuples-add) provenance**))) ; TODO: redundant (set-subtract ...)
 
 (define (stratum-rule-loop-delta stratum tuples real-delta-tuples-edb tuples-removed-glob provenance) ; per stratum, incremental

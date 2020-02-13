@@ -215,11 +215,14 @@
   (define S (strata P))
   (printf "strata: ~v\n" S)
 
-  (map (lambda (Preds)
+  (define strata-rules
+    (map (lambda (Preds)
           (for/fold ((R (set))) ((Pred (in-set Preds)))
             (set-union R (for/set ((r (in-set P)) #:when (eq? (atom-name (rule-head r)) Pred)) ; why not lists for "set" of rules?
                             r))))
         S))
+  
+  (cdr strata-rules)) ; throwing away first (true EDB) stratum 
 
 ; Evaluate unquoted expressions in a given environment. Expressions that are not unquoted are not evaluated.
 (define (evaluate-unquoted x env)
