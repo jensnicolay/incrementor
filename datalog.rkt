@@ -30,6 +30,14 @@
 (struct solver-result (tuples num-derived-tuples delta-solver) #:transparent)
 
 ;;;
+; (struct tuples (tuple-set meta) #:transparent)
+
+; (define (tuples-add-tuple ts tuple meta)
+;   (match-let (((tuples tuple-set meta) ts))
+;     (tuples (set-add tuple-set tuple) (hash-set meta tuple meta)
+
+
+;;;
 (struct add-tuple (tuple) #:transparent)
 (struct remove-tuple (tuple) #:transparent)
 

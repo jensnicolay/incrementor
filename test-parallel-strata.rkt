@@ -13,13 +13,12 @@
 (define r5 (:- #(Unreachable x y) #(Node x) #(Node y) (¬ #(Reachable x y))))
 
 
-(define P (set r1 r2)); r3 r4 r5))
-(define E (set #(Link 'a 'b) #(Link 'b 'c) #(Link 'c 'c) #(Link 'c 'd)))
-
+(define P (set r1 r2 r3 r4 r5))
+(define E (set #(Link 1 2) #(Link 2 3) #(Link 3 3)))
 
 ; (define sr1 (solve-naive P E))
 (define sr1 (solve-incremental P E))
 
-(define sr2 ((solver-result-delta-solver sr1) (list (add-tuple #(Link 'd 'e)))))
+(define sr2 ((solver-result-delta-solver sr1) (list (remove-tuple #(Link 2 3)))))
 (define tuples (solver-result-tuples sr2))
 (printf "2 ~a\n" (sort-tuples tuples))
