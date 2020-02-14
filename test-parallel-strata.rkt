@@ -14,11 +14,16 @@
 
 
 (define P (set r1 r2 r3 r4 r5))
-(define E (set #(Link 1 2) #(Link 2 3) #(Link 3 3)))
+(define E (set #(Link 1 2) #(Link 2 3)))
 
-; (define sr1 (solve-naive P E))
-(define sr1 (solve-incremental P E))
+(define srn1 (solve-naive P E))
+(define srn2 ((solver-result-delta-solver srn1) (list (add-tuple #(Link 3 3)))))
+(define tuplesn (solver-result-tuples srn2))
 
-(define sr2 ((solver-result-delta-solver sr1) (list (remove-tuple #(Link 2 3)))))
-(define tuples (solver-result-tuples sr2))
-(printf "2 ~a\n" (sort-tuples tuples))
+(define sri1 (solve-incremental P E))
+(define sri2 ((solver-result-delta-solver sri1) (list (add-tuple #(Link 3 3)))))
+(define tuplesi (solver-result-tuples sri2))
+
+
+(printf "\n\nnaive ~a\n" (sort-tuples tuplesn))
+(printf "incr  ~a\n" (sort-tuples tuplesi))
