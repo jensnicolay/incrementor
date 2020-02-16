@@ -27,18 +27,31 @@
   (printf "\nincr initial stratum ~a with ~a tuples\n" (set-count S) (set-count E))
   (if (null? S)
       (values E provenance num-derived-tuples); E0 are the initial EDBs, prov keys are all derived IDBs
-      (let-values (((tuples* provenance* num-derived-tuples*) (stratum-rule-loop-initial (car S) E provenance)))
+      (let ((stratum (car S)))
+        (define-values (tuples* provenance* num-derived-tuples*) (stratum-rule-loop-initial stratum E provenance))
         (stratum-loop-initial (cdr S) tuples* provenance* (+ num-derived-tuples num-derived-tuples*)))))
 
-(define (stratum-rule-loop-initial strat tuples provenance) ; per stratum, initial
+;;;
+(define (stratum-loop-delta S E provenance tuples-added tuples-removed-glob num-derived-tuples)
+  (printf "\nincr delta stratum ~a with ~a tuples, tuples-add ~a\n" (set-count S) (set-count E) tuples-added)
+  (if (null? S)
+      (values E provenance num-derived-tuples) ; TODO: redundant (set-subtract ...)
+      (let ((stratum (car S)))
+        (define-values (tuples* provenance* tuples-added* num-derived-tuples*) (stratum-rule-loop-delta stratum E tuples-added tuples-removed-glob provenance))
+        (stratum-loop-delta (cdr S) tuples* provenance* tuples-added* tuples-removed-glob (+ num-derived-tuples num-derived-tuples*)))))
 
-  (define edb-rules (stratum-edb-rules strat)) ; TODO: maybe also involve select-rules-f-t (but only select from edb-only rules)
-  (define p->r (stratum-p->r-idb strat))
+(define (stratum-rule-loop-delta stratum tuples delta-edb-tuples tuples-removed-glob provenance) ; per stratum, incremental
+  (define-values (delta-idb-tuples tuples* provenance* num-tuples-derived) (process-edb-delta stratum delta-edb-tuples tuples-removed-glob tuples provenance))
+  (process-idb-delta stratum delta-idb-tuples tuples* provenance* num-tuples-derived))
+;;;        
+
+(define (stratum-rule-loop-initial stratum tuples provenance) ; per stratum, initial
+
+  (define edb-rules (stratum-edb-rules stratum))
   (define num-derived-tuples 0)
-  (delta-loop edb-rules tuples tuples provenance p->r))
+  (define p->r (stratum-p->r-idb stratum))
 
-(define (delta-loop delta-rules tuples previous-delta-tuples provenance p->r) ; initial
-  (let loop ((delta-rules delta-rules) (tuples tuples) (previous-delta-tuples previous-delta-tuples) (provenance provenance))
+  (let loop ((delta-rules edb-rules) (tuples tuples) (previous-delta-tuples (set)) (provenance provenance))
     (printf "delta rules :~a\n" delta-rules)
     (printf "tuples :~a\n" tuples)
     (printf "previous delta tuples :~a\n" previous-delta-tuples)
@@ -81,17 +94,8 @@
   (define-values (tuples** provenance** num-derived-tuples) (stratum-loop-delta strata tuples* provenance* tuples-add remmed 0))
   (solver-result tuples** num-derived-tuples (make-delta-solver strata tuples** provenance**))) ; TODO: redundant (set-subtract ...)
 
-(define (stratum-loop-delta S E provenance tuples-added tuples-removed-glob num-derived-tuples)
-  (printf "\nincr delta stratum ~a with ~a tuples, tuples-add ~a\n" (set-count S) (set-count E) tuples-added)
-  (if (null? S)
-      (values E provenance num-derived-tuples) ; TODO: redundant (set-subtract ...)
-      (let ((stratum (car S)))
-        (define-values (E* provenance* tuples-added* num-derived-tuples*) (stratum-rule-loop-delta stratum E tuples-added tuples-removed-glob provenance))
-        (stratum-loop-delta (cdr S) E* provenance* tuples-added* tuples-removed-glob (+ num-derived-tuples num-derived-tuples*)))))
-
-(define (stratum-rule-loop-delta stratum tuples delta-edb-tuples tuples-removed-glob provenance) ; per stratum, incremental
-  (define-values (delta-idb-tuples tuples* provenance* num-tuples-derived) (process-edb-delta stratum delta-edb-tuples tuples-removed-glob tuples provenance))
-  (process-idb-delta stratum delta-idb-tuples tuples* provenance* num-tuples-derived))
+; stratum-loop-delta
+; stratum-rule-loop-delta
 
 (define (make-delta-solver strata tuples provenance)
   (lambda (deltas) ; deltas are initial EDBs that are added/removed
