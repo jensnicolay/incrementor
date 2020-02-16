@@ -41,25 +41,12 @@
     (printf "delta rules :~a\n" delta-rules)
     (printf "tuples :~a\n" tuples)
     (printf "previous delta tuples :~a\n" previous-delta-tuples)
-    (define-values (real-delta-tuples* provenance* num-derived-tuples*) (delta-rule-loop delta-rules previous-delta-tuples tuples provenance))
+    (define-values (real-delta-tuples* provenance* num-derived-tuples*) (delta-rule-loop-idb delta-rules previous-delta-tuples tuples provenance))
     (if (set-empty? real-delta-tuples*)
         (values tuples provenance* num-derived-tuples*) 
         (loop (select-rules-for-tuples real-delta-tuples* p->r) (set-union tuples real-delta-tuples*) real-delta-tuples* provenance*))))
 
-(define (delta-rule-loop rules* previous-delta-tuples tuples provenance) ; initial
-  (let loop ((rules* rules*) (delta-tuples (set)) (provenance provenance) (num-derived-tuples 0))
-    (if (set-empty? rules*)
-        (let ((real-delta-tuples (set-subtract delta-tuples tuples))) ; TODO?: full tuples set subtr
-          (printf "real-delta-tuples ~a\n" real-delta-tuples)
-          (values real-delta-tuples provenance num-derived-tuples))
-        (let ((rule (set-first rules*)))
-          (let ((derived-tuples-with-provenance-for-rule (fire-rule rule tuples previous-delta-tuples)))
-            (printf "fired ~a got ~a\n" rule derived-tuples-with-provenance-for-rule)
-            (let-values (((derived-tuples-for-rule provenance*)
-                (for/fold ((derived-tuples-for-rule (set)) (provenance provenance)) ((fr (in-set derived-tuples-with-provenance-for-rule)))
-                  (match-let (((cons derived-tuple prov) fr))
-                    (values (set-add derived-tuples-for-rule derived-tuple) (update-provenance provenance derived-tuple prov))))))
-              (loop (set-rest rules*) (set-union delta-tuples derived-tuples-for-rule) provenance* (+ num-derived-tuples (set-count derived-tuples-for-rule)))))))))
+; delta-rule-loop
 
 (define (solve-incremental-delta strata tuples provenance tuples-add* tuples-remove*) ; prov keys are onlhy IDB!, tuples-add/remove are initial delta EDBs
   (define intersection (set-intersect tuples-add* tuples-remove*)) ; TODO: we first remove, and then add: check whether/how this matters!
@@ -152,7 +139,8 @@
   (define p->r-idb (stratum-p->r-idb strat))
   (define num-derived-tuples 0)
   (let loop ((delta-rules (select-rules-for-tuples delta-idb-tuples p->r-idb)) (tuples (set-union tuples delta-idb-tuples)) (previous-delta-tuples delta-idb-tuples) (tuples-added delta-idb-tuples) (provenance provenance))      
-      (define-values (tuples* real-delta-tuples-idb* provenance* num-derived-tuples*) (delta-rule-loop-idb delta-rules previous-delta-tuples tuples provenance))
+      (define-values (real-delta-tuples-idb* provenance* num-derived-tuples*) (delta-rule-loop-idb delta-rules previous-delta-tuples tuples provenance))
+      (define tuples* (set-union tuples real-delta-tuples-idb*))
       (set! num-derived-tuples (+ num-derived-tuples num-derived-tuples*))
       (if (set-empty? real-delta-tuples-idb*)
           (values tuples* provenance* tuples-added num-derived-tuples)
@@ -160,11 +148,11 @@
             (loop delta-rules* tuples* real-delta-tuples-idb* (set-union tuples-added real-delta-tuples-idb*) provenance*)))))
 
 (define (delta-rule-loop-idb delta-rules previous-delta-tuples tuples provenance)
-  (let loop ((idb-rules* delta-rules) (delta-tuples (set)) (provenance provenance) (num-derived-tuples 0)) ;idb
+  (let loop ((idb-rules* delta-rules) (delta-tuples (set)) (provenance provenance) (num-derived-tuples 0))
     (if (set-empty? idb-rules*)
         (let ((real-delta-tuples-idb (set-subtract delta-tuples tuples)))
         ;(printf "real-delta-tuples-idb ~a\n" real-delta-tuples-idb)
-          (values (set-union tuples real-delta-tuples-idb) real-delta-tuples-idb provenance num-derived-tuples)) ;delta-loop-idb
+          (values real-delta-tuples-idb provenance num-derived-tuples)) ;delta-loop-idb
         (let ((rule (set-first idb-rules*)))
           (let ((derived-tuples-with-provenance-for-rule (fire-rule rule tuples previous-delta-tuples)))
             (printf "fired (idb) ~a got ~a\n" rule derived-tuples-with-provenance-for-rule)
@@ -173,7 +161,6 @@
                   (match-let (((cons derived-tuple prov) fr))
                     (values (set-add derived-tuples-for-rule derived-tuple) (update-provenance provenance derived-tuple prov))))))
               (loop (set-rest idb-rules*) (set-union delta-tuples derived-tuples-for-rule) provenance* (+ num-derived-tuples (set-count derived-tuples-for-rule)))))))))
-
 
 (define (print-map m)
   (for (((key value) (in-hash m)))
