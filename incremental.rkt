@@ -24,7 +24,7 @@
   (solver-result tuples* num-derived-tuples (make-delta-solver strata tuples* provenance*)))
 
 (define (stratum-loop-initial S E provenance num-derived-tuples)
-  (printf "\nincr initial stratum ~a with ~a tuples\n" (set-count S) (set-count E))
+  ; (printf "\nincr initial stratum ~a with ~a tuples\n" (set-count S) (set-count E))
   (if (null? S)
       (values E provenance num-derived-tuples); E0 are the initial EDBs, prov keys are all derived IDBs
       (let ((stratum (car S)))
@@ -38,21 +38,19 @@
   (define p->r (stratum-p->r-idb stratum))
 
   (let loop ((delta-rules edb-rules) (tuples tuples) (previous-delta-tuples (set)) (provenance provenance))
-    (printf "delta rules :~a\n" delta-rules)
-    (printf "tuples :~a\n" tuples)
-    (printf "previous delta tuples :~a\n" previous-delta-tuples)
+    ; (printf "delta rules :~a\n" delta-rules)
+    ; (printf "tuples :~a\n" tuples)
+    ; (printf "previous delta tuples :~a\n" previous-delta-tuples)
     (define-values (real-delta-tuples* provenance* num-derived-tuples*) (delta-rule-loop-idb delta-rules previous-delta-tuples tuples provenance))
     (if (set-empty? real-delta-tuples*)
         (values tuples provenance* num-derived-tuples*) 
         (loop (select-rules-for-tuples real-delta-tuples* p->r) (set-union tuples real-delta-tuples*) real-delta-tuples* provenance*))))
 
-; delta-rule-loop
-
 (define (solve-incremental-delta strata tuples provenance tuples-add* tuples-remove*) ; prov keys are onlhy IDB!, tuples-add/remove are initial delta EDBs
   (define intersection (set-intersect tuples-add* tuples-remove*)) ; TODO: we first remove, and then add: check whether/how this matters!
   (define tuples-add (set-subtract tuples-add* intersection))
   (define tuples-remove (set-subtract tuples-remove* intersection))
-  (printf "\n\nSOLVING INCREMENTAL-DELTA\nadd ~a\nremove ~a\n" tuples-add tuples-remove)
+  ; (printf "\n\nSOLVING INCREMENTAL-DELTA\nadd ~a\nremove ~a\n" tuples-add tuples-remove)
 
   ;; idb tuple removal due to removal of edb tuples with pos deps
   ;(printf "provenance before remming ~a\n" tuples-remove) (print-map provenance) (newline)
@@ -60,7 +58,7 @@
   (define t (list->set (hash-keys provenance)))
   (define t* (list->set (hash-keys provenance*))) ; all idbs
   (define remmed (set-subtract t t*))
-  (printf "tuples removed due to edb tuple removal: ~a\n" remmed)
+  ; (printf "tuples removed due to edb tuple removal: ~a\n" remmed)
   (define tuples* (set-subtract (set-union tuples tuples-add) (set-union tuples-remove remmed)))
 
   ;(define E0-removed (set-subtract E0 tuples-remove))
@@ -68,7 +66,7 @@
   (solver-result tuples** num-derived-tuples (make-delta-solver strata tuples** provenance**))) ; TODO: redundant (set-subtract ...)
 
 (define (stratum-loop-delta S E provenance tuples-added tuples-removed-glob num-derived-tuples)
-  (printf "\nincr delta stratum ~a with ~a tuples, tuples-add ~a\n" (set-count S) (set-count E) tuples-added)
+  ; (printf "\nincr delta stratum ~a with ~a tuples, tuples-add ~a\n" (set-count S) (set-count E) tuples-added)
   (if (null? S)
       (values E provenance num-derived-tuples) ; TODO: redundant (set-subtract ...)
       (let ((stratum (car S)))
@@ -96,28 +94,28 @@
 
   ;; idb tuple removal due to addition of edb tuples with neg deps
   (define neg-deps (list->set (set-map tuples-added ¬)))
-  (printf "provenance before remming ¬~a\n" tuples-added) (print-map provenance) (newline)
+  ; (printf "provenance before remming ¬~a\n" tuples-added) (print-map provenance) (newline)
   (define provenance* (remove-variables-from-system provenance neg-deps))
   ; UGH
   (define t (list->set (hash-keys provenance)))
   (define t* (list->set (hash-keys provenance*)))
   (define remmed (set-subtract t t*))
-  (printf "tuples removed due to edb tuple addition: ~a\n" remmed)
+  ; (printf "tuples removed due to edb tuple addition: ~a\n" remmed)
   (define tuples* (set-subtract tuples remmed)) ; TODO ugh! integrate tuples and provenance!
 
   ;; idb tuple addition due to removal of edb tuples with neg deps
   (define rules-neg (select-rules-for-tuples tuples-removed-glob p->r-edb¬))
-  (printf "rules for adding idb tuples due to edb tuple removal: ~a\n" rules-neg)
+  ; (printf "rules for adding idb tuples due to edb tuple removal: ~a\n" rules-neg)
   (define-values (delta-tuples-neg provenance** num-derived-tuples*) (delta-rule-loop-edb rules-neg tuples-removed-glob tuples* provenance*))
   (set! num-derived-tuples (+ num-derived-tuples num-derived-tuples*))
-  (printf "tuples added due to edb tuple removal: ~a\n" delta-tuples-neg)
+  ; (printf "tuples added due to edb tuple removal: ~a\n" delta-tuples-neg)
 
   ;; idb tuple addition due to addition of edb tuples with pos deps
   (define rules-pos (select-rules-for-tuples tuples-added p->r-edb))
-  (printf "rules for adding idb tuples due to edb tuple addition: ~a\n" rules-pos)
+  ; (printf "rules for adding idb tuples due to edb tuple addition: ~a\n" rules-pos)
   (define-values (delta-tuples-pos provenance*** num-derived-tuples**) (delta-rule-loop-edb rules-pos tuples-added tuples* provenance**))
   (set! num-derived-tuples (+ num-derived-tuples num-derived-tuples**))
-  (printf "tuples added due to edb tuple addition: ~a\n" delta-tuples-pos)
+  ; (printf "tuples added due to edb tuple addition: ~a\n" delta-tuples-pos) ; TODO: seems too large sometimes (e.g. Node 3 when removing Link 2 3)
   (define tuples** (set-union tuples* tuples-added))
   (define delta-idb-tuples (set-subtract (set-union delta-tuples-neg delta-tuples-pos) tuples**)) ; TODO?: full tuples set subtr
   (values delta-idb-tuples tuples** provenance*** num-derived-tuples))
@@ -128,7 +126,7 @@
         (values delta-tuples provenance num-derived-tuples)
         (let ((rule (set-first rules)))
           (let ((derived-tuples-with-provenance-for-rule (fire-rule rule tuples recent-tuples)))
-            (printf "fired (edb) ~a got ~a\n" rule derived-tuples-with-provenance-for-rule)
+            ; (printf "fired (edb) ~a got ~a\n" rule derived-tuples-with-provenance-for-rule)
             (let-values (((derived-tuples-for-rule provenance*)
                 (for/fold ((derived-tuples-for-rule (set)) (provenance provenance)) ((fr (in-set derived-tuples-with-provenance-for-rule)))
                   (match-let (((cons derived-tuple prov) fr))
@@ -154,7 +152,7 @@
           (values real-delta-tuples-idb provenance num-derived-tuples)) ;delta-loop-idb
         (let ((rule (set-first idb-rules*)))
           (let ((derived-tuples-with-provenance-for-rule (fire-rule rule tuples previous-delta-tuples)))
-            (printf "fired ~a got ~a\n" rule derived-tuples-with-provenance-for-rule)
+            ; (printf "fired ~a got ~a\n" rule derived-tuples-with-provenance-for-rule)
             (let-values (((derived-tuples-for-rule provenance*)
                 (for/fold ((derived-tuples-for-rule (set)) (provenance provenance)) ((fr (in-set derived-tuples-with-provenance-for-rule)))
                   (match-let (((cons derived-tuple prov) fr))
@@ -279,22 +277,22 @@
           R))))     
 
 (define (annotate-stratum stratum-rules)
-  (printf "***** annotate stratum ~a\n" stratum-rules)
+  ; (printf "***** annotate stratum ~a\n" stratum-rules)
   (define edb-rules (get-edb-rules stratum-rules))
 
   (define-values (semi-naive-rules-edb-pos semi-naive-rules-edb-neg) (rewrite-semi-naive-edb stratum-rules))
-  (printf "semi-naive rules edb pos: ~a\n" semi-naive-rules-edb-pos)
-  (printf "semi-naive rules edb neg: ~a\n" semi-naive-rules-edb-neg)
+  ; (printf "semi-naive rules edb pos: ~a\n" semi-naive-rules-edb-pos)
+  ; (printf "semi-naive rules edb neg: ~a\n" semi-naive-rules-edb-neg)
   
   (define semi-naive-rules-idb (rewrite-semi-naive-idb stratum-rules))
-  (printf "semi-naive rules idb: ~a\n" semi-naive-rules-idb)
+  ; (printf "semi-naive rules idb: ~a\n" semi-naive-rules-idb)
 
   (define p->r-edb (pred-to-rules semi-naive-rules-edb-pos))
   (define p->r-edb¬ (pred-to-rules semi-naive-rules-edb-neg))
   (define p->r-idb (pred-to-rules semi-naive-rules-idb))
-  (printf "p->r-edb ~a\n" p->r-edb)
-  (printf "p->r-edb¬ ~a\n" p->r-edb¬)
-  (printf "p->r-idb ~a\n" p->r-idb)
+  ; (printf "p->r-edb ~a\n" p->r-edb)
+  ; (printf "p->r-edb¬ ~a\n" p->r-edb¬)
+  ; (printf "p->r-idb ~a\n" p->r-idb)
   ; (printf "p->r-idb¬ ~a\n" p->r-idb¬)
 
   (stratum edb-rules p->r-edb p->r-edb¬ p->r-idb))

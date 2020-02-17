@@ -191,9 +191,9 @@
 (define (strata P)
 
   (define G-pred (precedence-lgraph P))   ; Compute a precedence graph based on dependencies between the predicates.
-  (printf "G-pred: ~v\n" G-pred)
+  ; (printf "G-pred: ~v\n" G-pred)
   (define v2cid (lscc-map G-pred))        ; Determine strongly connected components.
-  (printf "v2cid: ~v\n" v2cid)
+  ; (printf "v2cid: ~v\n" v2cid)
 
   (define G-red
     (for/fold ((R (hash))) (((from edges) (in-hash G-pred)))
@@ -201,19 +201,19 @@
         (for/fold ((R (hash-set R from-cid (hash-ref R from-cid (set))))) ((edge (in-set edges)))
           (hash-set R from-cid (set-add (hash-ref R from-cid) (hash-ref v2cid (ledge-to edge))))))))
 
-  (printf "G-red: ~v\n" G-red)
+  ; (printf "G-red: ~v\n" G-red)
   (define cid-sorted (topo-sort2 G-red))
-  (printf "topo: ~v\n" cid-sorted)
+  ; (printf "topo: ~v\n" cid-sorted)
 
   (define cid2C (for/fold ((R (hash))) (((v cid) (in-hash v2cid)))
                         (hash-set R cid (set-add (hash-ref R cid (set)) v))))
-  (printf "cid2C: ~v\n" cid2C)
+  ; (printf "cid2C: ~v\n" cid2C)
   (map (lambda (cids) (for/fold ((R (set))) ((cid (in-set cids))) (set-union R (hash-ref cid2C cid)))) cid-sorted))
 
 ; returns list of sets of rules
 (define (stratify P)
   (define S (strata P))
-  (printf "strata: ~v\n" S)
+  ; (printf "strata: ~v\n" S)
 
   (define strata-rules
     (map (lambda (Preds)
@@ -320,7 +320,7 @@
                         (if env* ; Test whether unification succeeded.
                             (loop (set-rest work) ΔE)
                             (loop (set-add (set-rest work) (fire-state atoms-rest env ptuples)) ΔE))))
-                    (_ ; this "datalog": allows unsafe negation, only restriction is absence of distinguished (= from head) vars which are not pos bound
+                    (_ ; this "datalog": don't bind in -, so either +bound var or _
                       (let e-loop ((E (for/set ((ev (in-set E)) #:when (eq? (atom-name ev) (atom-name av))) ev)))
                         (if (set-empty? E)
                             (loop (set-add (set-rest work) (fire-state atoms-rest env (set-add ptuples (¬ (bind-fact av env))))) ΔE)

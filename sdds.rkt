@@ -142,7 +142,7 @@
   (#(Final e κ) . :- . #(Reachable e κ) (¬ #(Step e κ e‘ κ‘)))
 
   ; Eval/2 succeeds when its first argument can be evaluated to a result, which is/should be its second argument.
-  (#(Eval e d) . :- . #(Final e κ) #(Geval e e κ d))  
+  (#(Eval e d) . :- . #(Final e κ) #(Geval e e κ d)) 
 ))
 
 (define num-derived-tuples 0)

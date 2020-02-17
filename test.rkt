@@ -61,11 +61,11 @@
           (check-equal-tuples* single-delta-solver-results)
           (check-lesseq-derivations* single-delta-solver-results)
 
-          ; (printf "===acc deltas ~a\n" (set-count deltas-acc*))
-          ; (define all-deltas-solver-results (map (lambda (delta-solver) (printf ">>>\n") (delta-solver deltas-acc*)) delta-solvers0))
-          ; (check-equal-tuples (car full-solver-results) (car all-deltas-solver-results))
-          ; (check-equal-tuples* all-deltas-solver-results)
-          ; (check-lesseq-derivations* all-deltas-solver-results)
+          (printf "===acc deltas ~a\n" (set-count deltas-acc*))
+          (define all-deltas-solver-results (map (lambda (delta-solver) (printf ">>>\n") (delta-solver deltas-acc*)) delta-solvers0))
+          (check-equal-tuples (car full-solver-results) (car all-deltas-solver-results))
+          (check-equal-tuples* all-deltas-solver-results)
+          (check-lesseq-derivations* all-deltas-solver-results)
 
           (delta-loop (cdr deltas) deltas-acc* (map solver-result-delta-solver single-delta-solver-results)))))))
 
@@ -87,6 +87,36 @@
                 (let ((delta-solver-result (delta-solver (list delta))))
                   (loop (cdr deltas) (solver-result-delta-solver delta-solver-result) (cons (data-point (timer) delta-solver-result) results)))))))))
 
-  (single-step)
+  (define (num-tuples-cumulator l) ; makes num-derived-tuples cumulative
+    (define (helper l sum)
+      (if (null? l)
+          '()
+          (match (car l)
+            ((cons tm ndt)
+              (let ((sum* (+ sum ndt)))
+                (cons (cons tm sum*) (helper (cdr l) sum*)))))))
+    (helper l 0))
 
-)
+  (define single-step-result (map num-tuples-cumulator (single-step)))
+
+  (define (timings)
+    (define (helper deltas sr1 sr2 sr3)
+      (if (null? deltas)
+          '()
+          (let ((delta (car deltas))
+                (t1 (caar sr1))
+                (t2 (caar sr2))
+                (t3 (caar sr3)))
+            (cons (list delta t1 t2 t3) (helper (cdr deltas) (cdr sr1) (cdr sr2) (cdr sr3))))))
+    (helper deltas (car single-step-result) (cadr single-step-result) (caddr single-step-result)))
+
+  (define timings-result (timings))
+
+  (define (print-csv ll)
+    (for ((l ll))
+      (for ((x l))
+        (printf "~v; " x))
+      (newline)))
+  
+  (print-csv timings-result)
+  )
