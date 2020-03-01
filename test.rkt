@@ -16,6 +16,7 @@
       (check-equal-tuples (car rs) r2)))
 
   (define (check-equal-tuples r1 r2)
+    ;(printf "? ~a ~a\n" (sort-tuples (solver-result-tuples r1)) (sort-tuples (solver-result-tuples r2)))
     (unless (equal? (solver-result-tuples r1) (solver-result-tuples r2))
       (error 'check-equal-tuples "tuples not equal\n~a\n~a\n" (sort-tuples (solver-result-tuples r1)) (sort-tuples (solver-result-tuples r2)))))
 

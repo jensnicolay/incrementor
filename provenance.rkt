@@ -37,17 +37,18 @@
     (absorption* n*)))
       
 
-(define (remove-variable n x)
-  (for/fold ((result (set))) ((p (in-set n)))
-    (if (set-member? p x)
-        result
-        (set-add result p))))
-            
+; (define (remove-variable n x)
+;   (for/fold ((result (set))) ((p (in-set n)))
+;     (if (set-member? p x)
+;         result
+;         (set-add result p))))
+
 (define (remove-variables n xs)
   (for/fold ((result (set))) ((p (in-set n)))
-    (if (set-empty? (set-intersect p xs))
-        (set-add result p)
-        result)))
+    (if (for/or ((x (in-set p)))
+          (set-member? xs x))
+        result
+        (set-add result p))))
 
 
 ; (define (simplify pred busy T P)
