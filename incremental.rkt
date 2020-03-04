@@ -1,26 +1,92 @@
 #lang racket 
 
 (require "datalog.rkt")
-(require "provenance.rkt")
+;(require "provenance.rkt")
 (provide solve-incremental)
 
 (struct stratum (edb-rules p->r-edb p->r-edb¬ p->r-idb) #:transparent)
 
-(define (update-provenance provenance tuple provenance-product)
-  (if (set-member? provenance-product tuple) ; remove direct recursion
-      provenance
-      (let ((current-prov (hash-ref provenance tuple (set))))
-        (let ((updated-prov (add-product current-prov provenance-product))) ; remember: do not recursively simplify here (only top-level absorption + direct recursion removal): need to have "raw" provenance!
-          ;(printf "update prov ~a ~a\n~a -> ~a\n\n" tuple provenance-product current-prov updated-prov)
-          (hash-set provenance tuple updated-prov)))))
+(struct provenance (vpi vp pv) #:transparent) ; var->prod var included in product, var->product var depends on, product->var product produces
 
+(define (print-provenance prov)
+  (match-let (((provenance vpi vp pv) prov))
+    (printf "vpi\n")
+    (for (((var pi) (in-hash vpi)))
+      (printf "\t~a -> ~a\n" var pi))
+    (printf "vp\n")
+    (for (((var p) (in-hash vp)))
+      (printf "\t~a -> ~a\n" var p))
+    (printf "pv\n")
+    (for (((p var) (in-hash pv)))
+      (printf "\t~a -> ~a\n" p var))))
 
+(define empty-provenance (provenance (hash) (hash) (hash)))
+
+(define (update-provenance prov tuple prov-product)
+  ;(printf "before update tuple ~a product ~a\n" tuple prov-product)
+  ;(print-provenance prov)
+  (let ((result (update-provenance* prov tuple prov-product)))
+   ; (printf "after:\n")
+    ;(print-provenance result)
+    result))
+
+(define (update-provenance* prov tuple prov-product)
+  (if (set-member? prov-product tuple) ; remove direct recursion
+      prov
+      (match-let (((provenance vpi vp pv) prov))
+        (let ((vpi*
+            (for/fold ((vpi vpi)) ((var (in-set prov-product)))
+              (hash-set vpi var (set-add (hash-ref vpi var (set)) prov-product)))))
+          (let ((vp* (hash-set vp tuple (set-add (hash-ref vp tuple (set)) prov-product))))
+            (let ((pv* (hash-set pv prov-product (set-add (hash-ref pv prov-product (set)) tuple))))
+              (provenance vpi* vp* pv*)))))))
+
+(define (remove-product p vpi vp pv)
+  (let remove-i-loop ((vars p) (vpi vpi))
+    (if (set-empty? vars)
+        
+        (let ((produced-vars (hash-ref pv p)))
+          (let ((pv* (hash-remove pv p)))
+            (let remove-prod-loop ((vars produced-vars) (vp vp) (vars-removed (set)))
+              (if (set-empty? vars)
+                  (values vpi vp pv* vars-removed)
+                  (let ((var (set-first vars)))
+                    (let ((dependend-products (set-remove (hash-ref vp var) p)))
+                      ;(printf "after rem ~a for ~a dependend prods ~a\n" p var dependend-products)
+                      (if (set-empty? dependend-products)
+                          (remove-prod-loop (set-rest vars) (hash-remove vp var) (set-add vars-removed var)) ; no deps left
+                          (remove-prod-loop (set-rest vars) (hash-set vp var dependend-products) vars-removed))))))))
+                    
+        (let ((var (set-first vars)))
+          (let ((involvement (set-remove (hash-ref vpi var) p))) ; perf: check whether testing for singleton is quicker (no empty? check needed)
+            (if (set-empty? involvement)
+                (remove-i-loop (set-rest vars) (hash-remove vpi var))
+                (remove-i-loop (set-rest vars) (hash-set vpi var involvement))))))))
+
+(define (remove-variables-from-system prov xs)
+  (match-let (((provenance vpi vp pv) prov))
+    (remove-variables-from-system* vpi vp pv xs (set))))
+
+(define (remove-variables-from-system* vpi vp pv xs vars-removed-glob)
+  (if (set-empty? xs)
+      (values (provenance vpi vp pv) vars-removed-glob)
+      (let ((x (set-first xs)))
+        ; (printf "removing var ~a\n" x)
+        (let ((reachable-ps (hash-ref vpi x (set))))
+          (let p-loop ((ps reachable-ps) (vpi vpi) (vp vp) (pv pv) (vars-removed (set)))
+            (if (set-empty? ps)
+                (remove-variables-from-system* vpi vp pv (set-union (set-rest xs) vars-removed) (set-union (set-add vars-removed-glob x) vars-removed))
+                (let ((p (set-first ps)))
+                  ; (printf "removing product ~a\n" p)
+                  (let-values (((vpi* vp* pv* vars-removed*) (remove-product p vpi vp pv)))
+                    (p-loop (set-rest ps) vpi* vp* pv* (set-union vars-removed vars-removed*))))))))))
+  
 (define (solve-incremental P E)
   (define strata (map annotate-stratum (stratify P))) 
   (solve-incremental-initial strata E))
 
 (define (solve-incremental-initial strata tuples)
-  (define-values (tuples* provenance* num-derived-tuples) (stratum-loop-initial strata tuples (hash) 0))
+  (define-values (tuples* provenance* num-derived-tuples) (stratum-loop-initial strata tuples empty-provenance 0))
   (solver-result tuples* num-derived-tuples (make-delta-solver strata tuples* provenance*)))
 
 (define (stratum-loop-initial S E provenance num-derived-tuples)
@@ -53,11 +119,12 @@
   ; (printf "\n\nSOLVING INCREMENTAL-DELTA\nadd ~a\nremove ~a\n" tuples-add tuples-remove)
 
   ;; idb tuple removal due to removal of edb tuples with pos deps
-  ;(printf "provenance before remming ~a\n" tuples-remove) (print-map provenance) (newline)
-  (define provenance* (remove-variables-from-system provenance tuples-remove))
-  (define t (list->set (hash-keys provenance)))
-  (define t* (list->set (hash-keys provenance*))) ; all idbs
-  (define remmed (set-subtract t t*))
+  ; (printf "provenance before remming ~a\n" tuples-remove) (print-provenance provenance) (newline)
+  (define-values (provenance* remmed) (remove-variables-from-system provenance tuples-remove))
+  ; (define t (list->set (hash-keys provenance)))
+  ; (define t* (list->set (hash-keys provenance*))) ; all idbs
+  ; (define remmed (set-subtract t t*))
+  ; (printf "provenance after remming ~a\n" tuples-remove) (print-provenance provenance*) (newline)
   ; (printf "tuples removed due to edb tuple removal: ~a\n" remmed)
   (define tuples* (set-subtract (set-union tuples tuples-add) (set-union tuples-remove remmed)))
 
@@ -95,11 +162,11 @@
   ;; idb tuple removal due to addition of edb tuples with neg deps
   (define neg-deps (list->set (set-map tuples-added ¬)))
   ; (printf "provenance before remming ¬~a\n" tuples-added) (print-map provenance) (newline)
-  (define provenance* (remove-variables-from-system provenance neg-deps))
-  ; UGH
-  (define t (list->set (hash-keys provenance)))
-  (define t* (list->set (hash-keys provenance*)))
-  (define remmed (set-subtract t t*))
+  (define-values (provenance* remmed) (remove-variables-from-system provenance neg-deps))
+  ; ; UGH
+  ; (define t (list->set (hash-keys provenance)))
+  ; (define t* (list->set (hash-keys provenance*)))
+  ; (define remmed (set-subtract t t*))
   ; (printf "tuples removed due to edb tuple addition: ~a\n" remmed)
   (define tuples* (set-subtract tuples remmed)) ; TODO ugh! integrate tuples and provenance!
 
@@ -298,17 +365,13 @@
   (stratum edb-rules p->r-edb p->r-edb¬ p->r-idb))
 
 
-
-
-
-
-
 (define r1 (:- #(Reachable x y)   #(Link x y)))
 (define r2 (:- #(Reachable x y)   #(Link x z) #(Reachable z y)))
 (define r3 (:- #(Node x)          #(Link x y)))
 (define r4 (:- #(Node y)          #(Link x y)))
 (define r5 (:- #(Unreachable x y) #(Node x) #(Node y) (¬ #(Reachable x y))))
 
+; (define P (set r1 r2))
 (define P (set r1 r2 r3 r4 r5))
 (define E (set))
 
@@ -371,6 +434,9 @@
   (remove-tuple #(Link 'z 'a))
 ))
 
-(for/fold ((solver (solve-incremental P E))) ((delta deltas))
-  (define solver* (solver-result-delta-solver solver))
-  (solver* (list delta)))
+(let ((result
+    (for/fold ((solver (solve-incremental P E))) ((delta deltas))
+      (define solver* (solver-result-delta-solver solver))
+      (solver* (list delta)))))
+  (printf "~a\n" (sort-tuples (solver-result-tuples result))))
+

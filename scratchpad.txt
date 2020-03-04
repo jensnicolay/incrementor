@@ -1,2 +1,6 @@
 Datalog taint analysis: Debreach, Paulsen (1909....pdf)
+Datalog taint analysis 2: P/Taint: Unified Points-to and Taint Analysis
 Metaprogramming: Declarative Reconfigurable Trust Management, Marczak (lbtrust.pdf)
+
+
+/Applications/Racket\ v7.4/bin/raco profile --use-errortrace --self incremental.rkt
