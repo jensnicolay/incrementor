@@ -130,12 +130,12 @@
 
   ;(define E0-removed (set-subtract E0 tuples-remove))
   (define-values (tuples** provenance** num-derived-tuples) (stratum-loop-delta strata tuples* provenance* tuples-add remmed 0))
-  (solver-result tuples** num-derived-tuples (make-delta-solver strata tuples** provenance**))) ; TODO: redundant (set-subtract ...)
+  (solver-result tuples** num-derived-tuples (make-delta-solver strata tuples** provenance**)))
 
 (define (stratum-loop-delta S E provenance tuples-added tuples-removed-glob num-derived-tuples)
   ; (printf "\nincr delta stratum ~a with ~a tuples, tuples-add ~a\n" (set-count S) (set-count E) tuples-added)
   (if (null? S)
-      (values E provenance num-derived-tuples) ; TODO: redundant (set-subtract ...)
+      (values E provenance num-derived-tuples)
       (let ((stratum (car S)))
         (define-values (tuples* provenance* tuples-added* num-derived-tuples*) (stratum-rule-loop-delta stratum E tuples-added tuples-removed-glob provenance))
         (stratum-loop-delta (cdr S) tuples* provenance* tuples-added* tuples-removed-glob (+ num-derived-tuples num-derived-tuples*)))))
@@ -163,10 +163,6 @@
   (define neg-deps (list->set (set-map tuples-added ¬)))
   ; (printf "provenance before remming ¬~a\n" tuples-added) (print-map provenance) (newline)
   (define-values (provenance* remmed) (remove-variables-from-system provenance neg-deps))
-  ; ; UGH
-  ; (define t (list->set (hash-keys provenance)))
-  ; (define t* (list->set (hash-keys provenance*)))
-  ; (define remmed (set-subtract t t*))
   ; (printf "tuples removed due to edb tuple addition: ~a\n" remmed)
   (define tuples* (set-subtract tuples remmed)) ; TODO ugh! integrate tuples and provenance!
 
@@ -184,7 +180,7 @@
   (set! num-derived-tuples (+ num-derived-tuples num-derived-tuples**))
   ; (printf "tuples added due to edb tuple addition: ~a\n" delta-tuples-pos) ; TODO: seems too large sometimes (e.g. Node 3 when removing Link 2 3)
   (define tuples** (set-union tuples* tuples-added))
-  (define delta-idb-tuples (set-subtract (set-union delta-tuples-neg delta-tuples-pos) tuples**)) ; TODO?: full tuples set subtr
+  (define delta-idb-tuples (set-subtract (set-union delta-tuples-neg delta-tuples-pos) tuples**)) ; TODO?: full tuples set subtr: replace by member check when adding to delta set (see https://arxiv.org/pdf/1907.05045.pdf)
   (values delta-idb-tuples tuples** provenance*** num-derived-tuples))
 
 (define (delta-rule-loop-edb rules recent-tuples tuples provenance)
@@ -214,7 +210,7 @@
 (define (delta-rule-loop-idb delta-rules previous-delta-tuples tuples provenance) ; initial and delta
   (let loop ((idb-rules* delta-rules) (delta-tuples (set)) (provenance provenance) (num-derived-tuples 0))
     (if (set-empty? idb-rules*)
-        (let ((real-delta-tuples-idb (set-subtract delta-tuples tuples))) ; TODO: subtract with full tuples here
+        (let ((real-delta-tuples-idb (set-subtract delta-tuples tuples))) ; TODO: subtract with full tuples here: replace with member check when adding to delta set
         ;(printf "real-delta-tuples-idb ~a\n" real-delta-tuples-idb)
           (values real-delta-tuples-idb provenance num-derived-tuples)) ;delta-loop-idb
         (let ((rule (set-first idb-rules*)))
