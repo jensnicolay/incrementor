@@ -222,10 +222,6 @@
                     (values (set-add derived-tuples-for-rule derived-tuple) (update-provenance provenance derived-tuple prov))))))
               (loop (set-rest idb-rules*) (set-union delta-tuples derived-tuples-for-rule) provenance* (+ num-derived-tuples (set-count derived-tuples-for-rule)))))))))
 
-(define (print-map m)
-  (for (((key value) (in-hash m)))
-    (printf "~a -> ~a\n" key value)))
-
 ; rewrites IDB preds in rules that contain them
 (define (rewrite-semi-naive-idb rules)
   (let ((idb-preds (for/set ((rule (in-set rules)))
@@ -360,6 +356,7 @@
 
   (stratum edb-rules p->r-edb p->r-edb¬ p->r-idb))
 
+(module+ main
 
 (define r1 (:- #(Reachable x y)   #(Link x y)))
 (define r2 (:- #(Reachable x y)   #(Link x z) #(Reachable z y)))
@@ -435,4 +432,5 @@
       (define solver* (solver-result-delta-solver solver))
       (solver* (list delta)))))
   (printf "~a\n" (sort-tuples (solver-result-tuples result))))
+)
 

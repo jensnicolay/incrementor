@@ -20,15 +20,16 @@
             (let ((rule (set-first rules)))
               (let ((derived-tuples-for-rule (for/set ((fr (in-set (fire-rule rule derived-tuples (set)))))
                                                 (car fr)))) ; drop provenance
+                ; (printf "fired ~a got ~a\n" rule derived-tuples-for-rule)
                 (set! num-derived-tuples (+ num-derived-tuples (set-count derived-tuples-for-rule)))
                 (loop (set-rest rules) (set-union derived-tuples derived-tuples-for-rule))))))) ; Accumulate all derived tuples.
 
     (define (stratum-loop S E-inter)
-      ;(printf "\nn stratum ~a/~a with ~a tuples\n" (- (set-count strata) (set-count S)) (set-count strata) (set-count E-inter))
+      ; (printf "\nn stratum ~a/~a with ~a tuples\n" (- (set-count strata) (set-count S)) (set-count strata) (set-count E-inter))
       (if (null? S) ; Check whether there are more strata to traverse.
           (solver-result E-inter num-derived-tuples (make-delta-solver)); All tuples (initial and derived).
           (let ((Pi (car S))) ; Rules in the first stratum.
-            ;(printf "Pi: ~v\n" (list->set (set-map Pi (lambda (r) (atom-name (rule-head r))))))
+            ; (printf "Pi: ~v\n" (list->set (set-map Pi (lambda (r) (atom-name (rule-head r))))))
             (let intra-loop ((E-intra E-inter))
               (let ((tuples (stratum-rule-loop Pi E-intra)))
                 (let ((E-intra* (set-union E-intra tuples)))

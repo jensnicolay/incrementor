@@ -4,6 +4,7 @@
 (require "datalog.rkt")
 (require "naive.rkt")
 (require "semi-naive.rkt")
+(require "incremental.rkt")
 
 (define (ast->tuples e)
   (let loop ((W (set e)) (E (set)))
@@ -78,6 +79,8 @@
   ; Reachable/2 succeeds when its first argument is the root node of the AST or when there exists is an expression
   ; that is reachable from the root node and steps to the expression in the first argument.
   (#(Reachable e 0) . :- . #(Root e))
+
+;---
   (#(Reachable e‘ κ‘) . :- . #(Reachable e κ) #(Step e κ e‘ κ‘))
   
   (#(Step e κ e‘ κ‘) . :- . #(Lit e _) #(Reachable e κ) #(Cont e κ e‘ κ‘))
@@ -164,6 +167,7 @@
   (let ((E (ast->tuples e)))
     (printf "~a\n" E)
     (match-let (((solver-result tuples num-derived-tuples* _) (solve-semi-naive P E)))
+      (printf "RESULT: ~a\n" tuples)
       (set! num-derived-tuples (+ num-derived-tuples num-derived-tuples*))
       (unless (= 1 (length (sequence->list (sequence-filter (lambda (a) (eq? 'Root (atom-name a))) (in-set tuples)))))
         (error 'conc-eval "wrong number of Roots"))

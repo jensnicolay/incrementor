@@ -6,7 +6,7 @@
     stratify fire-rule
     solver-result solver-result-tuples solver-result-num-derived-tuples solver-result-delta-solver
     add-tuple remove-tuple apply-deltas
-    sort-tuples)
+    sort-tuples print-map)
 
 ; Terminology (TODO: look at https://dodisturb.me/posts/2018-12-25-The-Essence-of-Datalog.html for ADT naming)
 ; * Term: Constant or Variable
@@ -151,49 +151,53 @@
                 (hash-set R v index))))
             (loop (add1 index) (set-rest SCC) R*))))))
 
-
-(define (topo-sort G)
-
-  (define V (set))
-  (define R '())
-
-  (define (dfs v)
-    (set! V (set-add V v))
-    (for ((s (in-set (hash-ref G v))))
-      (unless (set-member? V s)
-        (dfs s)))
-    (set! R (cons v R)))
-
-  (for ((v (in-list (hash-keys G))))
-      (unless (set-member? V v)
-        (dfs v)))
-
-  R)
-
-(define (topo-sort2 G)
-  (let ((cids (list->set (hash-keys G))))
-    (let ((non-sources (for/fold ((R (set))) ((values (in-list (hash-values G))))
-                        (set-union R values))))
-      (let ((sources (set-subtract cids non-sources)))
-        ;(printf "non-sources ~a non-sinks ~a sources ~a\n" non-sources non-sinks sources)
-        (let loop ((layer-nodes sources) (visited (set)) (layers '()))
-          ;(printf "layer ~a visited ~a layers ~a\n" layer visited layers)
-          (let ((layer (for/set ((cid (in-set layer-nodes)) #:unless (set-member? visited cid)) cid)))
-            (if (set-empty? layer)
-                (reverse layers)
-                (let ((layers* (cons layer layers)))
-                  (let ((visited* (set-union visited layer)))
-                    (let ((layer-nodes* (for/fold ((R (set))) ((cid (in-set layer))) (hash-ref G cid (set)))))
-                      (loop layer-nodes* visited* layers*)))))))))))
-
-
+; adapted from https://rosettacode.org/wiki/Topological_sort#Racket
+(define (clean G)
+  (define G* (hash-copy G))
+  (for ([(from tos) G])
+    ; remove self dependencies
+    (hash-set! G* from (set-remove tos from))
+    ; make sure all nodes are present in the ht
+    (for ([to tos]) (hash-update! G* to (λ(_)_) (set))))
+  G*)
+ 
+(define (incoming G)
+  (define in (make-hash))
+  (for* ([(from tos) G] [to tos])
+    (hash-update! in to (λ(fs) (set-add fs from)) (set)))
+  in)
+ 
+(define (nodes G)       (hash-keys G))
+(define (out G n)       (hash-ref G n (set)))
+(define (remove! G n m) (hash-set! G n (set-remove (out G n) m)))
+ 
+(define (topo-sort G*)
+  (define G (clean G*))
+  (define n (length (nodes G)))
+  (define in (incoming G))
+  (define (no-incoming? n) (set-empty? (hash-ref in n (set))))
+  (let loop ([L '()] [S (list->set (filter no-incoming? (nodes G)))])
+    (cond [(set-empty? S)
+           (if (= (length L) n)
+               (reverse L)
+               (error 'topo-sort (~a "cycle detected" G)))]
+          [else 
+           (define n   (set-first S))
+           (define S\n (set-rest S))                
+           (for ([m (out G n)])
+             (remove! G n m)
+             (remove! in m n)
+             (when (no-incoming? m)
+               (set! S\n (set-add S\n m))))
+           (loop (cons n L) S\n)])))
+ 
 ; returns list of sets of rule names
 (define (strata P)
 
   (define G-pred (precedence-lgraph P))   ; Compute a precedence graph based on dependencies between the predicates.
-  ; (printf "G-pred: ~v\n" G-pred)
+  (printf "G-pred:\n")(print-map G-pred)(newline)
   (define v2cid (lscc-map G-pred))        ; Determine strongly connected components.
-  ; (printf "v2cid: ~v\n" v2cid)
+  (printf "v2cid: ~v\n" v2cid)
 
   (define G-red
     (for/fold ((R (hash))) (((from edges) (in-hash G-pred)))
@@ -201,19 +205,37 @@
         (for/fold ((R (hash-set R from-cid (hash-ref R from-cid (set))))) ((edge (in-set edges)))
           (hash-set R from-cid (set-add (hash-ref R from-cid) (hash-ref v2cid (ledge-to edge))))))))
 
-  ; (printf "G-red: ~v\n" G-red)
-  (define cid-sorted (topo-sort2 G-red))
-  ; (printf "topo: ~v\n" cid-sorted)
+  (printf "G-red:\n") (print-map G-red)(newline)
+  (generate-dot G-red "G-red")
+  (define cid-sorted (topo-sort G-red))
+  (printf "topo: ~v\n" cid-sorted)
 
   (define cid2C (for/fold ((R (hash))) (((v cid) (in-hash v2cid)))
                         (hash-set R cid (set-add (hash-ref R cid (set)) v))))
-  ; (printf "cid2C: ~v\n" cid2C)
-  (map (lambda (cids) (for/fold ((R (set))) ((cid (in-set cids))) (set-union R (hash-ref cid2C cid)))) cid-sorted))
+  (printf "cid2C: ~v\n" cid2C)
+  ;(map (lambda (cids) (for/fold ((R (set))) ((cid (in-set cids))) (set-union R (hash-ref cid2C cid)))) cid-sorted))
+  (map (lambda (cid) (hash-ref cid2C cid)) cid-sorted))
+
+(define (generate-dot graph name)  
+  (let ((dotf (open-output-file (format "~a.dot" name) #:exists 'replace)))
+    (fprintf dotf "digraph G {\n")
+    (for/fold ((S (set))) (((s ts) graph))
+      (unless (set-member? S s)
+        (fprintf dotf "~a [label=\"~a\"];\n" s s))
+        (for/fold ((S (set-add S s))) ((s* ts))
+          (unless (set-member? S s*)
+            (fprintf dotf "~a [label=\"~a\"];\n" s* s*))
+          (fprintf dotf "~a -> ~a;\n" s s*)
+          (set-add S s*)))
+      (fprintf dotf "}")
+      (close-output-port dotf)))
+
+
 
 ; returns list of sets of rules
 (define (stratify P)
   (define S (strata P))
-  ; (printf "strata: ~v\n" S)
+  (printf "strata: ~v\n" S)
 
   (define strata-rules
     (map (lambda (Preds)
@@ -278,7 +300,7 @@
       ((equal? red pattern) env)
       (else #f))))
 
-(define (bind-fact hv env)                     
+(define (bind-fact hv env)
   (let ((terms 
     (for/list ((i (in-range (atom-arity hv))))
       (let ((x (atom-term hv i)))
@@ -323,7 +345,8 @@
                     (_ ; this "datalog": don't bind in -, so either +bound var or _
                       (let e-loop ((E (for/set ((ev (in-set E)) #:when (eq? (atom-name ev) (atom-name av))) ev)))
                         (if (set-empty? E)
-                            (loop (set-add (set-rest work) (fire-state atoms-rest env (set-add ptuples (¬ (bind-fact av env))))) ΔE)
+                            (let ((ptuple #f)); (¬ (bind-fact av env)))) ; provenance
+                              (loop (set-add (set-rest work) (fire-state atoms-rest env (set-add ptuples ptuple))) ΔE))
                             (let* ((ev (set-first E))
                                    (env* (unify-atoms av ev env)))
                                 ;(printf "¬ unify result ~a ~a: ~v\n" av ev m)
@@ -387,6 +410,10 @@
 (define (sort-tuples tuples)
   (let ((tuple-list (set->list tuples)))
     (sort (map ~a tuple-list) string<?)))
+
+(define (print-map m)
+  (for (((key value) (in-hash m)))
+    (printf "~a -> ~a\n" key value)))
 
 
 (module+ main

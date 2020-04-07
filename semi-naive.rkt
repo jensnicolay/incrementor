@@ -19,23 +19,23 @@
       (define p->r (stratum-p->r strat))
       
       (let rule-loop ((delta-rules edb-rules) (tuples tuples) (previous-delta-tuples tuples))
-        ;(printf "delta rules :~a\n" delta-rules)
+        (printf "delta rules :~a\n" delta-rules)
         (let delta-rule-loop ((rules* delta-rules) (delta-tuples (set)))
           (if (set-empty? rules*)
             (let ((real-delta-tuples (set-subtract delta-tuples tuples))) ; TODO?: full set subtr
-              ; (printf "real-delta-tuples ~a\n" real-delta-tuples)
+              (printf "real-delta-tuples ~a\n" real-delta-tuples)
               (if (set-empty? real-delta-tuples)
                   tuples
                   (rule-loop (select-rules-for-tuples real-delta-tuples p->r) (set-union tuples real-delta-tuples) real-delta-tuples)))
             (let ((rule (set-first rules*)))
               (let ((derived-tuples-for-rule (for/set ((fr (in-set (fire-rule rule tuples previous-delta-tuples))))
                                                 (car fr)))) ; drop provenance
-                ; (printf "fired ~a got ~a\n" rule derived-tuples-for-rule)
+                (printf "fired ~a got ~a\n" rule derived-tuples-for-rule)
                 (set! num-derived-tuples (+ num-derived-tuples (set-count derived-tuples-for-rule)))
                 (delta-rule-loop (set-rest rules*) (set-union delta-tuples derived-tuples-for-rule))))))))
 
   (define (stratum-loop S E)
-    ;(printf "\nsn stratum ~a/~a with ~a tuples\n" (- (set-count strata) (set-count S)) (set-count strata) (set-count E))
+    (printf "\nsn stratum ~a/~a with ~a tuples\n" (- (set-count strata) (set-count S)) (set-count strata) (set-count E))
     (if (null? S)
         (solver-result E num-derived-tuples (make-delta-solver))
         (let ((E* (stratum-rule-loop (car S) E)))
@@ -123,7 +123,7 @@
   (define semi-naive-rules (rewrite-semi-naive stratum-rules))
   ;(printf "semi-naive rules: ~a\n" semi-naive-rules)
   (define p->r (pred-to-rules semi-naive-rules))
-  ;(printf "pred-to-rules ~a\n" p->r)
+  (printf "pred-to-rules\n")(print-map p->r)
   (define edb-rules (get-edb-rules stratum-rules))
   ;(printf "edb-rules ~a\n" edb-rules)
 
