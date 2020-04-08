@@ -8,4 +8,9 @@ Metaprogramming: Declarative Reconfigurable Trust Management, Marczak (lbtrust.p
 
 sdds topdown seminaive 8499 ms 4564 tuples
 
-(add-tuple '#(Link 'z 'a)); 432; 104; 18; wl-add before semi-naiving the initial solve of incr
+20200408
+wl-add before semi-naiving the initial solve of incr
+(add-tuple '#(Link 'z 'a)); 432; 104; 18;
+
+wl-neg-add-remove
+(remove-tuple '#(Link 'z 'a)); 1081; 489; 476; 

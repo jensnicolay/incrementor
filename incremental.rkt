@@ -112,11 +112,11 @@
         (values tuples provenance* num-derived-tuples*) 
         (loop (select-rules-for-tuples real-delta-tuples* p->r) (set-union tuples real-delta-tuples*) real-delta-tuples* provenance*))))
 
-(define (solve-incremental-delta strata tuples provenance tuples-add* tuples-remove*) ; prov keys are onlhy IDB!, tuples-add/remove are initial delta EDBs
+(define (solve-incremental-delta strata tuples provenance tuples-add* tuples-remove*) ; prov keys are only IDB!, tuples-add/remove are initial delta EDBs
   (define intersection (set-intersect tuples-add* tuples-remove*)) ; TODO: we first remove, and then add: check whether/how this matters!
   (define tuples-add (set-subtract tuples-add* intersection))
   (define tuples-remove (set-subtract tuples-remove* intersection))
-  ; (printf "\n\nSOLVING INCREMENTAL-DELTA\nadd ~a\nremove ~a\n" tuples-add tuples-remove)
+  ;(printf "\n\nSOLVING INCREMENTAL-DELTA\nadd ~a\nremove ~a\n" tuples-add tuples-remove)
 
   ;; idb tuple removal due to removal of edb tuples with pos deps
   ; (printf "provenance before remming ~a\n" tuples-remove) (print-provenance provenance) (newline)
@@ -132,13 +132,14 @@
   (define-values (tuples** provenance** num-derived-tuples) (stratum-loop-delta strata tuples* provenance* tuples-add remmed 0))
   (solver-result tuples** num-derived-tuples (make-delta-solver strata tuples** provenance**)))
 
-(define (stratum-loop-delta S E provenance tuples-added tuples-removed-glob num-derived-tuples)
-  ;(printf "\nincr delta stratum ~a with ~a tuples, tuples-add ~a\n" (set-count S) (set-count E) tuples-added)
-  (if (null? S)
-      (values E provenance num-derived-tuples)
-      (let ((stratum (car S)))
-        (define-values (tuples* provenance* tuples-added* num-derived-tuples*) (stratum-rule-loop-delta stratum E tuples-added tuples-removed-glob provenance))
-        (stratum-loop-delta (cdr S) tuples* provenance* tuples-added* tuples-removed-glob (+ num-derived-tuples num-derived-tuples*)))))
+(define (stratum-loop-delta strata tuples provenance tuples-added tuples-removed-glob num-derived-tuples)
+  ;(printf "\nincr delta stratum ~a\ntuples ~a\ntuples-add ~a\n" (set-count strata) tuples tuples-added)
+  (if (null? strata)
+      (values tuples provenance num-derived-tuples)
+      (let ((stratum (car strata)))
+        (define-values (tuples* provenance* tuples-added* num-derived-tuples*) (stratum-rule-loop-delta stratum tuples tuples-added tuples-removed-glob provenance))
+        ;(printf "tuples-added* ~a\n" tuples-added*)
+        (stratum-loop-delta (cdr strata) tuples* provenance* (set-union tuples-added tuples-added*) tuples-removed-glob (+ num-derived-tuples num-derived-tuples*)))))
 
 (define (stratum-rule-loop-delta stratum tuples delta-edb-tuples tuples-removed-glob provenance) ; per stratum, incremental
   (define-values (delta-idb-tuples tuples* provenance* num-tuples-derived) (process-edb-delta stratum delta-edb-tuples tuples-removed-glob tuples provenance))

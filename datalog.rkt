@@ -205,7 +205,7 @@
         (for/fold ((R (hash-set R from-cid (hash-ref R from-cid (set))))) ((edge (in-set edges)))
           (hash-set R from-cid (set-add (hash-ref R from-cid) (hash-ref v2cid (ledge-to edge))))))))
 
-  ;(printf "G-red:\n") (print-map G-red)(newline) (generate-dot G-red "G-red")
+  ;(printf "G-red:\n") (print-map G-red)(newline) ; (generate-dot G-red "G-red")
   (define cid-sorted (topo-sort G-red))
   ;(printf "topo: ~v\n" cid-sorted)
 
