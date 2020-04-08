@@ -4,3 +4,8 @@ Metaprogramming: Declarative Reconfigurable Trust Management, Marczak (lbtrust.p
 
 
 /Applications/Racket\ v7.4/bin/raco profile --use-errortrace --self incremental.rkt
+
+
+sdds topdown seminaive 8499 ms 4564 tuples
+
+(add-tuple '#(Link 'z 'a)); 432; 104; 18; wl-add before semi-naiving the initial solve of incr

@@ -4,7 +4,7 @@
 (require "naive.rkt")
 (require "semi-naive.rkt")
 (require "incremental.rkt")
-(require "test.rkt")
+(require "wl-test.rkt")
 
 (define r1 (:- #(Reachable x y)    #(Link x y)))
 (define r2 (:- #(Reachable x y)    #(Link x z) #(Reachable z y)))

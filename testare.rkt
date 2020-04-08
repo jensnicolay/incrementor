@@ -26,7 +26,7 @@
 ))
 
 (define E (set #(X (5 3)) #(X3 123) #(X4 #f)))
-(define S (solver-result-tuples (solve-semi-naive P E)))
+(define S (solver-result-tuples (solve-naive P E)))
 
 (printf "\nsolve ~a\n\n" S)
 

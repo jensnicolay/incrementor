@@ -6,8 +6,13 @@
 (require "semi-naive.rkt")
 (require "incremental.rkt")
 
+(define LET_BIN 0)
+(define BIN 0)
+
 (define (ast->tuples e)
-  (let loop ((W (set e)) (E (set)))
+
+  (define (helper e parent pos))
+  
     (if (set-empty? W)
         E
         (match (set-first W)
@@ -19,7 +24,8 @@
           ; ((«lam» _ (list-rest e-params ... e-param) e-body) (set-add (set-add (list->set e-params) e-param) e-body))
           ; ((«lam» _ (? «id»? e-param) e-body) (set e-param e-body))
           ((«let» l x e0 e1)
-            (loop (set-union (set-rest W) (set x e0 e1)) (set-add E `#(Let ,l ,(ast-label x) ,(ast-label e0) ,(ast-label e1)))))
+            (loop (set-union (set-rest W) (set x e0 e1)) 
+                  (set-union E (set `#(Let ,l ,(ast-label x) ,(ast-label e0) ,(ast-label e1)))
           ((«letrec» l x e0 e1)
             (loop (set-union (set-rest W) (set x e0 e1)) (set-add E `#(Letrec ,l ,(ast-label x) ,(ast-label e0) ,(ast-label e1)))))
           ((«if» l ae e1 e2)
@@ -68,8 +74,7 @@
   (#(Parent e p) . :- . #(If p _ _ e))
 
   ; Root/1 succeeds if its argument is the root node of the ast, i.e., a node without a parent.
-  (#(HasParent e) . :- . #(Parent e _))
-  (#(Root e) . :- . #(Ast e) (¬ #(HasParent e)))
+  (#(Root e) . :- . #(Ast e) #(Ast e‘) (¬ #(Parent e _)))
 
   (:- `#(Prim "+" ,+))
   (:- `#(Prim "-" ,-))
@@ -80,6 +85,8 @@
   ; Reachable/2 succeeds when its first argument is the root node of the AST or when there exists is an expression
   ; that is reachable from the root node and steps to the expression in the first argument.
   (#(Reachable e 0) . :- . #(Root e))
+
+;---
   (#(Reachable e‘ κ‘) . :- . #(Reachable e κ) #(Step e κ e‘ κ‘))
   
   (#(Step e κ e‘ κ‘) . :- . #(Lit e _) #(Reachable e κ) #(Cont e κ e‘ κ‘))
@@ -141,8 +148,7 @@
   (#(Geval e e κ d) . :- . #(If e _ _ _) #(Step e κ e-thenelse κ) #(Geval e-thenelse e-thenelse κ d))
   
   ; Final/2 succeeds when its first argument is an expression that cannot be evaluated further, i.e., which cannot be stepped anymore.
-  (#(Steps e κ) . :- . #(Step e κ _ _))
-  (#(Final e κ) . :- . #(Reachable e κ) (¬ #(Steps e κ)))
+  (#(Final e κ) . :- . #(Reachable e κ) (¬ #(Step e κ e‘ κ‘)))
 
   ; Eval/2 succeeds when its first argument can be evaluated to a result, which is/should be its second argument.
   (#(Eval e d) . :- . #(Final e κ) #(Geval e e κ d)) 
