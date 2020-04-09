@@ -6,43 +6,33 @@
 (require "semi-naive.rkt")
 (require "incremental.rkt")
 
-(define LET_BIN 0)
-(define BIN 0)
-
 (define (ast->tuples e)
-
-  (define (helper e parent pos))
-  
-    (if (set-empty? W)
-        E
-        (match (set-first W)
-          ((«id» l x) (loop (set-rest W) (set-add E `#(Id ,l ,x))))
-          ((«lit» l d) (loop (set-rest W) (set-add E `#(Lit ,l ,d))))
-          ((«lam» l (list e-params ...) e-body)
-            (loop (set-union (set-rest W) (list->set e-params) (set e-body))
-                  (set-add E `#(Lam ,l ,(map ast-label e-params) ,(ast-label e-body)))))
-          ; ((«lam» _ (list-rest e-params ... e-param) e-body) (set-add (set-add (list->set e-params) e-param) e-body))
-          ; ((«lam» _ (? «id»? e-param) e-body) (set e-param e-body))
-          ((«let» l x e0 e1)
-            (loop (set-union (set-rest W) (set x e0 e1)) 
-                  (set-union E (set `#(Let ,l ,(ast-label x) ,(ast-label e0) ,(ast-label e1)))
-          ((«letrec» l x e0 e1)
-            (loop (set-union (set-rest W) (set x e0 e1)) (set-add E `#(Letrec ,l ,(ast-label x) ,(ast-label e0) ,(ast-label e1)))))
-          ((«if» l ae e1 e2)
-            (loop (set-union (set-rest W) (set ae e1 e2)) (set-add E `#(If ,l ,(ast-label ae) ,(ast-label e1) ,(ast-label e2)))))
-          ; ((«car» _ x) (set x))
-          ; ((«cdr» _ x) (set x))
-          ; ((«set!» _ x ae) (set x ae))
-          ; ((«set-car!» _ x ae) (set x ae))
-          ; ((«set-cdr!» _ x ae) (set x ae))
-          ; ((«cons» _ ae1 ae2) (set ae1 ae2))
-          ; ((«make-vector» _ ae1 ae2) (set ae1 ae2))
-          ; ((«vector-ref» _ x ae) (set x ae))
-          ; ((«vector-set!» _ x ae1 ae2) (set x ae1 ae2))
-          ; ((«quo» _ _) (set))
-          ((«app» l e-rator e-rands)
-            (loop (set-union (set-rest W) (set e-rator) (list->set e-rands)) (set-add E `#(App ,l ,(ast-label e-rator) ,(map ast-label e-rands)))))
-          (_ (error "ast->tuples: cannot handle expression" e))))))
+  (match e
+    ((«id» l x) (set `#(Id ,l ,x)))
+    ((«lit» l d) (set`#(Lit ,l ,d)))
+    ((«lam» l (list e-params ...) e-body)
+      (set-add (foldl set-union (ast->tuples e-body) (map ast->tuples e-params)) `#(Lam ,l ,(map ast-label e-params) ,(ast-label e-body))))
+    ; ((«lam» _ (list-rest e-params ... e-param) e-body) (set-add (set-add (list->set e-params) e-param) e-body))
+    ; ((«lam» _ (? «id»? e-param) e-body) (set e-param e-body))
+    ((«let» l x e0 e1)
+      (set-add (set-union (ast->tuples x) (ast->tuples e0) (ast->tuples e1)) `#(Let ,l ,(ast-label x) ,(ast-label e0) ,(ast-label e1))))
+    ((«letrec» l x e0 e1)
+      (set-add (set-union (ast->tuples x) (ast->tuples e0) (ast->tuples e1)) `#(Letrec ,l ,(ast-label x) ,(ast-label e0) ,(ast-label e1))))
+    ((«if» l ae e1 e2)
+      (set-add (set-union (ast->tuples ae) (ast->tuples e1) (ast->tuples e2)) `#(If ,l ,(ast-label ae) ,(ast-label e1) ,(ast-label e2))))
+    ; ((«car» _ x) (set x))
+    ; ((«cdr» _ x) (set x))
+    ; ((«set!» _ x ae) (set x ae))
+    ; ((«set-car!» _ x ae) (set x ae))
+    ; ((«set-cdr!» _ x ae) (set x ae))
+    ; ((«cons» _ ae1 ae2) (set ae1 ae2))
+    ; ((«make-vector» _ ae1 ae2) (set ae1 ae2))
+    ; ((«vector-ref» _ x ae) (set x ae))
+    ; ((«vector-set!» _ x ae1 ae2) (set x ae1 ae2))
+    ; ((«quo» _ _) (set))
+    ((«app» l e-rator e-rands)
+      (set-add (foldl set-union (ast->tuples e-rator) (map ast->tuples e-rands)) `#(App ,l ,(ast-label e-rator) ,(map ast-label e-rands))))
+    (_ (error "ast->tuples: cannot handle expression" e))))
 
 ; Set of evaluation rules for Scheme, expressed as Datalog relations.
 (define P (set
@@ -74,7 +64,8 @@
   (#(Parent e p) . :- . #(If p _ _ e))
 
   ; Root/1 succeeds if its argument is the root node of the ast, i.e., a node without a parent.
-  (#(Root e) . :- . #(Ast e) #(Ast e‘) (¬ #(Parent e _)))
+  (#(HasParent e) . :- . #(Parent e _))
+  (#(Root e) . :- . #(Ast e) (¬ #(HasParent e)))
 
   (:- `#(Prim "+" ,+))
   (:- `#(Prim "-" ,-))
@@ -85,8 +76,6 @@
   ; Reachable/2 succeeds when its first argument is the root node of the AST or when there exists is an expression
   ; that is reachable from the root node and steps to the expression in the first argument.
   (#(Reachable e 0) . :- . #(Root e))
-
-;---
   (#(Reachable e‘ κ‘) . :- . #(Reachable e κ) #(Step e κ e‘ κ‘))
   
   (#(Step e κ e‘ κ‘) . :- . #(Lit e _) #(Reachable e κ) #(Cont e κ e‘ κ‘))
@@ -148,7 +137,8 @@
   (#(Geval e e κ d) . :- . #(If e _ _ _) #(Step e κ e-thenelse κ) #(Geval e-thenelse e-thenelse κ d))
   
   ; Final/2 succeeds when its first argument is an expression that cannot be evaluated further, i.e., which cannot be stepped anymore.
-  (#(Final e κ) . :- . #(Reachable e κ) (¬ #(Step e κ e‘ κ‘)))
+  (#(Steps e κ) . :- . #(Step e κ _ _))
+  (#(Final e κ) . :- . #(Reachable e κ) (¬ #(Steps e κ)))
 
   ; Eval/2 succeeds when its first argument can be evaluated to a result, which is/should be its second argument.
   (#(Eval e d) . :- . #(Final e κ) #(Geval e e κ d)) 
