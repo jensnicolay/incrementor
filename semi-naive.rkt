@@ -35,7 +35,7 @@
                 (delta-rule-loop (set-rest rules*) (set-union delta-tuples derived-tuples-for-rule))))))))
 
   (define (stratum-loop S E)
-    (printf "\nsn stratum ~a/~a with ~a tuples\n" (- (set-count strata) (set-count S)) (set-count strata) (set-count E))
+    ;(printf "\nsn stratum ~a/~a with ~a tuples\n" (- (set-count strata) (set-count S)) (set-count strata) (set-count E))
     (if (null? S)
         (solver-result E num-derived-tuples (make-delta-solver))
         (let ((E* (stratum-rule-loop (car S) E)))

@@ -6,12 +6,29 @@
 (require "semi-naive.rkt")
 (require "incremental.rkt")
 
+(define (param->tuples p)
+  (define i -1)
+  (lambda (e-param)
+    (set! i (add1 i))
+    (match e-param
+      ((«id» l x) (set `#(Param ,l ,x ,p ,i))))))
+
+(define (arg->tuples p)
+  (define i -1)
+  (lambda (e-arg)
+    (set! i (add1 i))
+    (set-add
+      (ast->tuples e-arg)
+      `#(Arg ,(ast-label e-arg) ,p ,i))))
+
 (define (ast->tuples e)
   (match e
     ((«id» l x) (set `#(Id ,l ,x)))
     ((«lit» l d) (set`#(Lit ,l ,d)))
     ((«lam» l (list e-params ...) e-body)
-      (set-add (foldl set-union (ast->tuples e-body) (map ast->tuples e-params)) `#(Lam ,l ,(map ast-label e-params) ,(ast-label e-body))))
+      (set-add
+        (foldl set-union (ast->tuples e-body) (map (param->tuples l) e-params)) 
+        `#(Lam ,l ,(ast-label e-body))))
     ; ((«lam» _ (list-rest e-params ... e-param) e-body) (set-add (set-add (list->set e-params) e-param) e-body))
     ; ((«lam» _ (? «id»? e-param) e-body) (set e-param e-body))
     ((«let» l x e0 e1)
@@ -31,7 +48,9 @@
     ; ((«vector-set!» _ x ae1 ae2) (set x ae1 ae2))
     ; ((«quo» _ _) (set))
     ((«app» l e-rator e-rands)
-      (set-add (foldl set-union (ast->tuples e-rator) (map ast->tuples e-rands)) `#(App ,l ,(ast-label e-rator) ,(map ast-label e-rands))))
+      (set-add
+        (foldl set-union (ast->tuples e-rator) (map (arg->tuples l) e-rands))
+        `#(App ,l ,(ast-label e-rator))))
     (_ (error "ast->tuples: cannot handle expression" e))))
 
 ; Set of evaluation rules for Scheme, expressed as Datalog relations.
@@ -39,13 +58,13 @@
 
   ; Ast/1 succeeds when its argument is a node in the ast. e is the label (l) corresponding to this node.
   ; Let and Letrec are limited to binding a single variable.
-  (#(Ast e) . :- . #(Lit e _))          ; Literal     <label, value>
-  (#(Ast e) . :- . #(Id e _))           ; Identifier  <label, identifier>
-  (#(Ast e) . :- . #(Lam e _ _))        ; Lambda      <label, [parameter,...],      body>
-  (#(Ast e) . :- . #(Let e _ _ _))      ; Let         <label, variable, expression, body>
-  (#(Ast e) . :- . #(Letrec e _ _ _))   ; Letrec      <label, variable, expression, body>
-  (#(Ast e) . :- . #(If e _ _ _))       ; If          <label, condition, then, else>
-  (#(Ast e) . :- . #(App e _ _))        ; Application <label, operator, operand>
+  (#(Ast e) . :- . #(Lit e _))          
+  (#(Ast e) . :- . #(Id e _))           
+  (#(Ast e) . :- . #(Lam e _))        
+  (#(Ast e) . :- . #(Let e _ _ _))      
+  (#(Ast e) . :- . #(Letrec e _ _ _))   
+  (#(Ast e) . :- . #(If e _ _ _))       
+  (#(Ast e) . :- . #(App e _))        
 
   ; Parent/2 succeeds when both arguments represent (labels of) nodes in the AST and 
   ; the node represented by the second argument is the parent of the node represented by the first argument.
@@ -55,10 +74,10 @@
   (#(Parent e p) . :- . #(Letrec p e _ _)) ;;
   (#(Parent e p) . :- . #(Letrec p _ e _))
   (#(Parent e p) . :- . #(Letrec p _ _ e))
-  (#(Parent e p) . :- . #(Lam p e-params _) #(%for-all e e-params))
-  (#(Parent e p) . :- . #(Lam p _ e))
-  (#(Parent e p) . :- . #(App p e _))
-  (#(Parent e p) . :- . #(App p _ e-rands) #(%for-all e e-rands))
+  ;(#(Parent e p) . :- . #(Lam p e-params _) #(%for-all e e-params))
+  (#(Parent e p) . :- . #(Lam p e))
+  (#(Parent e p) . :- . #(App p e))
+  (#(Parent e p) . :- . #(Arg e p _))
   (#(Parent e p) . :- . #(If p e _ _))
   (#(Parent e p) . :- . #(If p _ e _))
   (#(Parent e p) . :- . #(If p _ _ e))
@@ -80,11 +99,11 @@
   
   (#(Step e κ e‘ κ‘) . :- . #(Lit e _) #(Reachable e κ) #(Cont e κ e‘ κ‘))
   (#(Step e κ e‘ κ‘) . :- . #(Id e _) #(Reachable e κ) #(Cont e κ e‘ κ‘))
-  (#(Step e κ e‘ κ‘) . :- . #(Lam e _ _) #(Reachable e κ) #(Cont e κ e‘ κ‘))
+  (#(Step e κ e‘ κ‘) . :- . #(Lam e _) #(Reachable e κ) #(Cont e κ e‘ κ‘))
   (#(Step e κ e-init κ) . :- . #(Let e _ e-init _) #(Reachable e κ))
   (#(Step e κ e-init κ) . :- . #(Letrec e _ e-init _) #(Reachable e κ))
-  (#(Step e κ e-body #(call e κ)) . :- . #(App e e-rator _) #(Reachable e κ) #(Geval e-rator e κ #(obj e-lam _ _)) #(Lam e-lam _ e-body))
-  (#(Step e κ e‘ κ‘) . :- . #(App e e-rator _) #(Reachable e κ) #(Geval e-rator e κ #(prim _)) #(Cont e κ e‘ κ‘))
+  (#(Step e κ e-body #(call e κ)) . :- . #(App e e-rator) #(Reachable e κ) #(Geval e-rator e κ #(obj e-lam _ _)) #(Lam e-lam e-body))
+  (#(Step e κ e‘ κ‘) . :- . #(App e e-rator) #(Reachable e κ) #(Geval e-rator e κ #(prim _)) #(Cont e κ e‘ κ‘))
   (#(Step e κ e-then κ) . :- . #(If e e-cond e-then _) #(Reachable e κ) #(Geval e-cond e κ d) (¬ #(= d #f)))
   (#(Step e κ e-else κ) . :- . #(If e e-cond _ e-else) #(Reachable e κ) #(Geval e-cond e κ #f))
   
@@ -94,15 +113,15 @@
   (#(Cont e-body κ e‘ κ‘) . :- . #(Letrec p _ _ e-body) #(Parent e-body p) #(Reachable e-body κ) #(Cont p κ e‘ κ‘))
   (#(Cont e-then κ e‘ κ‘) . :- . #(If p _ e-then _) #(Parent e-then p) #(Reachable e-then κ) #(Cont p κ e‘ κ‘))
   (#(Cont e-else κ e‘ κ‘) . :- . #(If p _ _ e-else) #(Parent e-then p) #(Reachable e-then κ) #(Cont p κ e‘ κ‘))
-  (#(Cont e-body κ e‘ κ‘) . :- . #(Lam p _ e-body) #(Parent e-body p) #(Step e-call κ-call e-body κ) #(Cont e-call κ-call e‘ κ‘))
+  (#(Cont e-body κ e‘ κ‘) . :- . #(Lam p e-body) #(Parent e-body p) #(Step e-call κ-call e-body κ) #(Cont e-call κ-call e‘ κ‘))
 
-  (#(Binds e x) . :- . #(Lam e e-params _) #(%for-all e-param e-params) #(Id e-param x))
+  (#(Binds e x) . :- . #(Param _ x e _))
 
   (#(Evaluated e e κ) . :- . #(Lit e _) #(Reachable e κ))
   (#(Evaluated e e κ) . :- . #(Id e _) #(Reachable e κ))
-  (#(Evaluated e e κ) . :- . #(Lam e _ _) #(Reachable e κ))
-  (#(Evaluated e-rator e κ) . :- .  #(App e e-rator _) #(Reachable e κ))
-  (#(Evaluated e-rand e κ) . :- . #(App e _ e-rands) #(%for-all e-rand e-rands) #(Reachable e κ))
+  (#(Evaluated e e κ) . :- . #(Lam e _) #(Reachable e κ))
+  (#(Evaluated e-rator e κ) . :- .  #(App e e-rator) #(Reachable e κ))
+  (#(Evaluated e-rand e κ) . :- . #(App e _) #(Arg e-rand e _) #(Reachable e κ))
   (#(Evaluated e-cond e κ) . :- . #(If e e-cond _ _) #(Reachable e κ))
 
   (#(Lookup-root x e-body κ #(root e-init e-init κ)) . :- . #(Let e e-id e-init e-body) #(Id e-id x) #(Reachable e κ))
@@ -115,9 +134,9 @@
   (#(Lookup-root x e-cond κ r) . :- . #(Lookup-root x p κ r) #(If p e-cond _ _))
   (#(Lookup-root x e-then κ r) . :- . #(Lookup-root x p κ r) #(If p _ e-then _))
   (#(Lookup-root x e-else κ r) . :- . #(Lookup-root x p κ r) #(If p _ _ e-else))
-  (#(Lookup-root x e-body κ‘ #(root e-rand e κ)) . :- . #(App e e-rator e-rands) #(Lam e-lam e-params e-body)
-                                                         #(%for-all e-param i e-params) #(Id e-param x) #(%select e-rand i e-rands) #(Step e κ e-body κ‘))
-  (#(Lookup-root x e-body κ‘ r) . :- . #(App e e-rator _) #(Geval e-rator e κ #(obj e-lam e-obj κ-obj))
+  (#(Lookup-root x e-body κ‘ #(root e-rand e κ)) . :- . #(App e e-rator) #(Lam e-lam e-body)
+                                                         #(Param e-param x e-lam i) #(Arg e-rand e i) #(Step e κ e-body κ‘))
+  (#(Lookup-root x e-body κ‘ r) . :- . #(App e e-rator) #(Geval e-rator e κ #(obj e-lam e-obj κ-obj))
                                         #(Lookup-root x e-obj κ-obj r) (¬ #(Binds e-lam x)) #(Step e κ e-body κ‘))
   (#(Lookup-root "+" e κ #f) . :- . #(Root e) #(Reachable e κ))
   (#(Lookup-root "-" e κ #f) . :- . #(Root e) #(Reachable e κ))
@@ -128,12 +147,12 @@
   (#(Geval e‘ e κ d) . :- . #(Lit e‘ d) #(Evaluated e‘ e κ))
   (#(Geval e‘ e κ d) . :- . #(Id e‘ x) #(Evaluated e‘ e κ) #(Lookup-root x e κ #(root e-r e-rs κ-rs)) #(Geval e-r e-rs κ-rs d))
   (#(Geval e‘ e κ #(prim proc)) . :- . #(Id e‘ x) #(Evaluated e‘ e κ) #(Lookup-root x e κ #f) #(Prim x proc))
-  (#(Geval e‘ e κ #(obj e‘ e κ)) . :- . #(Lam e‘ _ _) #(Evaluated e‘ e κ))
+  (#(Geval e‘ e κ #(obj e‘ e κ)) . :- . #(Lam e‘ _) #(Evaluated e‘ e κ))
   (#(Geval e e κ d) . :- . #(Let e _ _ e-body) #(Reachable e κ) #(Geval e-body e-body κ d))
   (#(Geval e e κ d) . :- . #(Letrec e _ _ e-body) #(Reachable e κ) #(Geval e-body e-body κ d))
-  (#(Geval e e κ d) . :- . #(App e _ _) #(Step e κ e-body κ‘) #(Lam _ _ e-body) #(Geval e-body e-body κ‘ d))
-  (#(Geval e e κ d) . :- . #(App e e-rator e-rands) #(Reachable e κ) 
-                            #(Geval e-rator e κ #(prim proc)) #(%select e1 0 e-rands) #(Geval e1 e κ d1) #(%select e2 1 e-rands) #(Geval e2 e κ d2) #(= d ,(proc d1 d2)))
+  (#(Geval e e κ d) . :- . #(App e _) #(Step e κ e-body κ‘) #(Lam _ e-body) #(Geval e-body e-body κ‘ d))
+  (#(Geval e e κ d) . :- . #(App e e-rator) #(Reachable e κ) 
+                            #(Geval e-rator e κ #(prim proc)) #(Arg e1 e 0) #(Geval e1 e κ d1) #(Arg e2 e 1) #(Geval e2 e κ d2) #(= d ,(proc d1 d2)))
   (#(Geval e e κ d) . :- . #(If e _ _ _) #(Step e κ e-thenelse κ) #(Geval e-thenelse e-thenelse κ d))
   
   ; Final/2 succeeds when its first argument is an expression that cannot be evaluated further, i.e., which cannot be stepped anymore.
@@ -161,16 +180,17 @@
 
 (define (conc-eval e)
   (let ((E (ast->tuples e)))
-    ;(printf "~a\n" E)
-    (match-let (((solver-result tuples num-derived-tuples* _) (solve-semi-naive P E)))
+    ;(printf "~a\n~a\n\n" e E)
+    (match-let (((solver-result tuples num-derived-tuples* _) (solve-incremental P E)))
       ;(printf "RESULT: ~a\n" tuples)
       (set! num-derived-tuples (+ num-derived-tuples num-derived-tuples*))
-      (unless (= 1 (length (sequence->list (sequence-filter (lambda (a) (eq? 'Root (atom-name a))) (in-set tuples)))))
-        (error 'conc-eval "wrong number of Roots"))
-      (let ((Eval (sequence->list (sequence-filter (lambda (a) (eq? 'Eval (atom-name a))) (in-set tuples)))))
-        (if (= (length Eval) 1)
-            (vector-ref (car Eval) 2)
-            (error 'conc-eval "wrong Eval result: ~a" Eval))))))
+      (let ((Root (sequence->list (sequence-filter (lambda (a) (eq? 'Root (atom-name a))) (in-set tuples)))))
+        (unless (= 1 (length Root))
+          (error 'conc-eval "wrong number of roots: ~a" Root))
+        (let ((Eval (sequence->list (sequence-filter (lambda (a) (eq? 'Eval (atom-name a))) (in-set tuples)))))
+          (if (= (length Eval) 1)
+              (vector-ref (car Eval) 2)
+              (error 'conc-eval "wrong Eval result: ~a\n~a" Eval (sort-tuples tuples))))))))
 
 (define time-test-start (current-milliseconds))
 (test-rules '123 123)
@@ -252,5 +272,5 @@
 ; (test-machine '(let ((x (if #f (cons 1 2) (cons 3 4)))) (cdr x)) 4)
 
 
-(define time-test-end (current-milliseconds))
-(printf "~a ms ~a tuples derived" (- time-test-end time-test-start) num-derived-tuples)
+; (define time-test-end (current-milliseconds))
+; (printf "~a ms ~a tuples derived" (- time-test-end time-test-start) num-derived-tuples)

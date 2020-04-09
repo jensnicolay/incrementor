@@ -8,9 +8,22 @@ Metaprogramming: Declarative Reconfigurable Trust Management, Marczak (lbtrust.p
 
 sdds topdown seminaive 8499 ms 4564 tuples
 
-20200408
-wl-add before semi-naiving the initial solve of incr
-(add-tuple '#(Link 'z 'a)); 432; 104; 18;
+20200409
+wl-add
+(add-tuple '#(Link 'z 'a)); 488; 70; 11; 
 
 wl-neg-add-remove
-(remove-tuple '#(Link 'z 'a)); 1081; 489; 476; 
+(remove-tuple '#(Link 'z 'a)); 1268; 407; 449; 
+
+wl-neg-add-remove
+(remove-tuple '#(Link 'z 'a)); 1241; 396; 444; 
+
+sdds
+10463 ms 5247 tuples derived
+
+trick with _ in neg: replace negated term with _ projected out
+(¬ #(Param _ x e _)) => (#(Binds e x) . :- . #(Param _ x e _)) and (¬ #(Binds e x))
+
+sdds after Arg Param refactoring to remove special (%) predicates (solve-incremental)
+8788 ms 5154 tuples derived
+
