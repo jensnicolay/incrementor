@@ -163,25 +163,61 @@
   (#(Eval e d) . :- . #(Final e κ) #(Geval e e κ d)) 
 ))
 
+(define (singleton-result result)
+  (if (not (= 1 (set-count result)))
+      (error "wrong number of results: " result)
+      (set-first result)))
+
+(define (label-to-ast-tuple l delta-solver)
+  
+  (define tuples (delta-solver 'tuples))
+  
+  (or
+    (for/or ((tuple (in-set tuples)))
+      (match tuple
+        ((vector 'Lit (== l) _) tuple)
+        ((vector 'Id (== l) _) tuple)
+        ((vector 'Let (== l) _ _ _) tuple)
+        ((vector 'If (== l) _ _ _) tuple)
+        ((vector 'App (== l) _) tuple)
+        (_ #f)))
+    (error "cannot find ast tuple with label" l)))
+
+(define (tuple-to-ast delta-solver)
+  
+  (define tuples (delta-solver 'tuples))
+
+  (define (arg-builder l)
+    (let ((matches (delta-solver 'match-atom `#(Arg e ,l i))))
+        (map builder (map (lambda (a) (vector-ref a 1)) (sort (set-map matches car) < #:key (lambda (a) (vector-ref a 3)))))))
+
+  (define (builder* tuple)
+    (match tuple
+      (`#(Lit ,l ,d) («lit» l d))
+      (`#(Id ,l ,x) («id» l x))
+      (`#(Let ,l ,e₀ ,e₁ ,e₂) («let» l (builder e₀) (builder e₁) (builder e₂)))
+      (`#(If ,l ,e₀ ,e₁ ,e₂) («if» l (builder e₀) (builder e₁) (builder e₂)))
+      (`#(App ,l ,e₀) («app» l (builder e₀) (arg-builder l)))
+      (_ (error "cannot handle ast tuple" tuple))))
+
+  (define (builder l)
+    (builder* (label-to-ast-tuple l delta-solver)))
+
+  builder*)
+
+(define (parentl e delta-solver)
+  (let ((m (singleton-result (delta-solver 'match-atom `#(Parent ,(ast-label e) p)))))
+    (let ((p (hash-ref (cdr m) 'p)))
+      p)))
+      ;((label-to-ast delta-solver) p))))
+
 (define num-derived-tuples 0)
 
-(define (test-rules e expected)
-
-  (let ((result
-            (with-handlers ((exn:fail?
-                             (lambda (exc) (if (eq? expected 'FAIL)
-                                             'FAIL
-                                             (begin
-                                               (printf "unexpected failure for ~a:\n" e)
-                                               (raise exc))))))
-              (conc-eval ((make-compiler) e)))))
-         (unless (equal? result expected)
-           (error (format "wrong result for ~a:\n\texpected ~a\n\tgot      ~a" e expected result)))))
-
-(define (conc-eval e)
-  (let ((E (ast->tuples e)))
-    ;(printf "~a\n~a\n\n" e E)
-    (match-let (((solver-result tuples num-derived-tuples* _) (solve-incremental P E)))
+(define (evali e)
+  
+  (define (cont-with-result sr)
+    (match-let (((solver-result tuples num-derived-tuples* delta-solver) sr))
+      (printf "(~a tuples, ~a derived)\n" (set-count tuples) num-derived-tuples*)
       ;(printf "RESULT: ~a\n" tuples)
       (set! num-derived-tuples (+ num-derived-tuples num-derived-tuples*))
       (let ((Root (sequence->list (sequence-filter (lambda (a) (eq? 'Root (atom-name a))) (in-set tuples)))))
@@ -189,88 +225,56 @@
           (error 'conc-eval "wrong number of roots: ~a" Root))
         (let ((Eval (sequence->list (sequence-filter (lambda (a) (eq? 'Eval (atom-name a))) (in-set tuples)))))
           (if (= (length Eval) 1)
-              (vector-ref (car Eval) 2)
-              (error 'conc-eval "wrong Eval result: ~a\n~a" Eval (sort-tuples tuples))))))))
+              (let ((result (vector-ref (car Eval) 2)))
+                (lambda msg
+                  (match msg
+                    (`(result) result)
+                    (`(provenance) (delta-solver 'provenance))
+                    (`(parent ,e)
+                      (tuple-to-ast (parentl e delta-solver) delta-solver))
+                    (`(program)
+                      ((tuple-to-ast delta-solver) (label-to-ast-tuple (vector-ref (car Root) 1) delta-solver)))
+                    (`(replace ,e₀ ,e₁)
+                        (let ((p (label-to-ast-tuple (parentl e₀ delta-solver) delta-solver)))
+                          (match p
+                            ((vector 'Let l x e₀ e-body)
+                              (let ((delta
+                                (append
+                                  (list
+                                    (remove-tuple (label-to-ast-tuple e₀ delta-solver))
+                                    (remove-tuple p)
+                                    (add-tuple `#(Let ,l ,x ,(ast-label e₁) ,e-body)))
+                                  (set-map (ast->tuples e₁) add-tuple))))
+                                (cont-with-result (delta-solver 'apply-delta delta)))))))
+                    (_ (error "evali: cannot understand" msg)))))
+              (error 'conc-eval "wrong Eval result: ~a\n~a" Eval (sort-tuples tuples)))))))
 
-(define time-test-start (current-milliseconds))
-(test-rules '123 123)
-(test-rules '(let ((x 10)) x) 10)
-(test-rules '(let ((x 10)) (let ((y 20)) y)) 20)
-(test-rules '(let ((x 10)) (let ((y 20)) x)) 10)
-(test-rules '(let ((x 10)) (let ((x 20)) x)) 20)
-(test-rules '(let ((x 123)) (let ((u (let ((x #f)) "dummy"))) x)) 123)
-(test-rules '(let ((x 123)) (let ((u (let ((y "dummy")) (let ((x #f)) "dummy2")))) x)) 123)
-(test-rules '(let ((x (let ((z 3)) z))) x) 3)
+  (let ((E (ast->tuples e)))
+    (printf "tuples (~a): ~a\n" (set-count E) E)
+    (cont-with-result (solve-incremental P E))))
 
-(test-rules '(let ((f (lambda () 123))) (f)) 123) ; added 
-(test-rules '(let ((f (lambda (x) x))) (f 123)) 123) ; added
-(test-rules '(let ((x 123)) (let ((f (lambda () x))) (f))) 123)
-(test-rules '(let ((x 123)) (let ((f (lambda () x))) (let ((x 999)) (f)))) 123)
-(test-rules '(let ((f (lambda (x) (let ((v x)) v)))) (f 123)) 123)
-(test-rules '(let ((f (lambda (x) x))) (let ((v (f 999))) v)) 999)
-(test-rules '(let ((f (lambda (x) x))) (let ((u (f 1))) (f 2))) 2)
-
-(test-rules '(+ 1 1) 2)
-(test-rules '(let ((x (+ 1 1))) x) 2)
-(test-rules '(let ((f (lambda () (- 5 3)))) (f)) 2)
-(test-rules '(let ((f (lambda (x) (* x x)))) (f 4)) 16)
-(test-rules '((lambda (x) (* x x)) 4) 16)
-(test-rules '(let ((f (lambda (g) (g 4)))) (f (lambda (x) (* x x)))) 16)
-(test-rules '(let ((f (lambda (x) x))) (let ((v (+ 3 9))) v)) 12)
-
-(test-rules '(let ((g (lambda (v) v))) (let ((f (lambda (n) (let ((m (g 123))) (* m n))))) (f 2))) 246)
-(test-rules '(let ((f (lambda (y) (let ((x y)) x)))) (let ((z (f "foo"))) (f 1))) 1)
-(test-rules '(let ((f (lambda (x) (let ((i (lambda (a) a))) (i x))))) (let ((z1 (f 123))) (let ((z2 (f #t))) z2))) #t)
-(test-rules '(let ((f (lambda () (lambda (x) (* x x))))) (let ((g (f))) (g 4))) 16)
-
-(test-rules '(if #t 1 2) 1)
-(test-rules '(if #f 1 2) 2)
-(test-rules '(if #t (+ 3 5) (- 4 6)) 8)
-(test-rules '(if #f (+ 3 5) (- 4 6)) -2)
-(test-rules '(if #t (let ((x 1)) x) (let ((x 2)) x)) 1)
-(test-rules '(if #f (let ((x 1)) x) (let ((x 2)) x)) 2)
-(test-rules '(let ((x (if #t 1 2))) x) 1)
-(test-rules '(let ((x (if #f 1 2))) x) 2)
-(test-rules '(let ((f (lambda (x) (* x x)))) (let ((v (f 4))) (if v (f 5) (f 6)))) 25)
-
-(test-rules '(let ((f (lambda (x) (lambda (y) x)))) (let ((v (f 123))) (v 999))) 123)
-(test-rules '(let ((f (lambda (x) (lambda (x) x)))) (let ((v (f 123))) (v 999))) 999)
-(test-rules '(let ((f (lambda (g) (g 678)))) (let ((id (lambda (x) x))) (f id))) 678)
-(test-rules '(let ((f (lambda (g x) (g x)))) (let ((id (lambda (x) x))) (f id 789))) 789)
-(test-rules '(let ((f (lambda (g) (lambda (x) (g x))))) (let ((sq (lambda (x) (* x x)))) (let ((ff (f sq))) (ff 11)))) 121)
-(test-rules '(let ((f (lambda (n) (let ((x n)) (lambda () x))))) (let ((f0 (f 0))) (let ((f1 (f 1))) (let ((u (f1))) (f0))))) 0)
-
-(test-rules '(letrec ((f (lambda (x) (if x "done" (f #t))))) (f #f)) "done")
-(test-rules '(letrec ((f (lambda (x) (let ((v (= x 2))) (if v x (let ((u (+ x 1))) (f u))))))) (f 0)) 2)
-; ^ 26s unoptimized naive; 10s semi-naive + opti
-; (test-rules '(letrec ((count (lambda (n) (let ((t (= n 0))) (if t 123 (let ((u (- n 1))) (let ((v (count u))) v))))))) (count 1)) 123)
-; (test-rules '(letrec ((fac (lambda (n) (let ((v (= n 0))) (if v 1 (let ((m (- n 1))) (let ((w (fac m))) (* n w)))))))) (fac 1)) 1)
-; (test-rules '(letrec ((fac (lambda (n) (let ((v (= n 0))) (if v 1 (let ((m (- n 1))) (let ((w (fac m))) (* n w)))))))) (fac 3)) 6)
-; (test-rules '(letrec ((fib (lambda (n) (let ((c (< n 2))) (if c n (let ((n1 (- n 1))) (let ((n2 (- n 2))) (let ((f1 (fib n1))) (let ((f2 (fib n2))) (+ f1 f2)))))))))) (fib 1)) 1)
-; (test-rules '(letrec ((fib (lambda (n) (let ((c (< n 2))) (if c n (let ((n1 (- n 1))) (let ((f1 (fib n1))) (let ((n2 (- n 2))) (let ((f2 (fib n2))) (+ f1 f2)))))))))) (fib 1)) 1)
-; (test-rules '(letrec ((fib (lambda (n) (let ((c (< n 2))) (if c n (let ((n1 (- n 1))) (let ((n2 (- n 2))) (let ((f1 (fib n1))) (let ((f2 (fib n2))) (+ f1 f2)))))))))) (fib 3)) 2)
-; (test-rules '(letrec ((fib (lambda (n) (let ((c (< n 2))) (if c n (let ((n1 (- n 1))) (let ((f1 (fib n1))) (let ((n2 (- n 2))) (let ((f2 (fib n2))) (+ f1 f2)))))))))) (fib 3)) 2)
-; ^ excluded
-
-(test-rules 'x 'FAIL)
-(test-rules '(let ((f (lambda () f))) (f)) 'FAIL)
-; ^ full: 339.4 s unoptimized naive; 69.6 s semi-naive + opti
-
-; set!
-; (test-rules '(let ((g #f)) (let ((f (lambda (n) (let ((x n)) (let ((u (if g 123 (set! g (lambda (y) (set! x y)))))) (lambda () x))))))
-;                                (let ((f0 (f 0)))
-;                                  (let ((u (g 9)))
-;                                    (let ((f1 (f 1)))
-;                                      (let ((u (f1)))
-;                                        (f0))))))) 9)
+(define compile (make-compiler))
+(define let-binding (compile 2))
+(define p1 (compile
+  `(let ((x ,let-binding))
+    (let ((c (< x 0)))
+      (if c
+          'neg
+          'zeropos)))))
 
 
-; cons car cdr
-; (test-machine '(let ((x (if #t (cons 1 2) (cons 3 4)))) (car x)) 1)
-; (test-machine '(let ((x (if #t (cons 1 2) (cons 3 4)))) (cdr x)) 2)
-; (test-machine '(let ((x (if #f (cons 1 2) (cons 3 4)))) (car x)) 3)
-; (test-machine '(let ((x (if #f (cons 1 2) (cons 3 4)))) (cdr x)) 4)
+(define ii (evali p1))
+(ast->string (ii 'program))
+(ii 'result)
+
+(define let-binding‘ (compile -3))
+(define ii1 (ii 'replace let-binding let-binding‘))
+(ast->string (ii1 'program))
+(ii1 'result)
+
+(define let-binding“ (compile 2))
+(define ii2 (ii1 'replace let-binding‘ let-binding“))
+(ast->string (ii2 'program))
+(ii2 'result)
 
 
-; (define time-test-end (current-milliseconds))
-; (printf "~a ms ~a tuples derived" (- time-test-end time-test-start) num-derived-tuples)

@@ -3,6 +3,7 @@
 (provide
     atom? atom-name atom-arity atom-term ¬
     rule rule-head rule-body :-
+    match-atom run-query
     stratify fire-rule
     solver-result solver-result-tuples solver-result-num-derived-tuples solver-result-delta-solver
     add-tuple remove-tuple apply-deltas
@@ -305,7 +306,7 @@
       (let ((x (atom-term hv i)))
         (cond
           ((symbol? x)
-            (hash-ref env x (lambda () (error 'bind-fact "no value for ~a in ~a" x env))))
+            (hash-ref env x (lambda () (error 'bind-fact "no value for ~a in ~a for ~a" x env hv))))
           ((vector? x)
             (bind-fact x env))
           ((and (pair? x) (eq? (car x) 'quote))
@@ -314,21 +315,28 @@
   (let ((new-fact (apply vector-immutable (cons (atom-name hv) terms))))
     new-fact)))
 
-(struct fire-state (atoms env ptuples) #:transparent)
-
 (define (fire-rule rule E delta-tuples)
   ;(printf "fire rule ~v E ~v\n" rule E)
-  (let loop ((work (set (fire-state (rule-body rule) (hash) (set)))) ; The predicates to be checked. Initially, the predicates in the rule body.
+  (let ((qresult (run-query (rule-body rule) E delta-tuples)))
+    (let ((hv (rule-head rule)))
+      (for/set ((qr (in-set qresult)))
+        (let ((env (car qr))
+              (ptuples (cdr qr)))
+          (let ((new-fact (bind-fact hv env)))
+              (cons new-fact ptuples)))))))
+
+(struct fire-state (atoms env ptuples) #:transparent)
+
+(define (run-query atoms E delta-tuples)
+  ;(printf "fire rule ~v E ~v\n" rule E)
+  (let loop ((work (set (fire-state atoms (hash) (set))))
              (ΔE   (set)))
-    ;(printf "loop ~v\n" work)
     (if (set-empty? work)
         ΔE
         (match-let (((fire-state atoms env ptuples) (set-first work)))
         ;(printf "looking at atoms ~v in ~v\n" atoms env)
         (if (null? atoms)
-            (let* ((hv (rule-head rule))
-                   (new-fact (bind-fact hv env)))
-              (loop (set-rest work) (set-add ΔE (cons new-fact ptuples))))
+            (loop (set-rest work) (set-add ΔE (cons env ptuples)))
             (let ((av (car atoms))
                   (atoms-rest (cdr atoms)))
               (match av
@@ -351,7 +359,7 @@
                             )
                             (let* ((ev (set-first E))
                                    (env* (unify-atoms av ev env)))
-                                ;(printf "¬ unify result ~a ~a: ~v\n" av ev m)
+                                ;(printf "¬ unify result ~a ~a: ~v\n" av ev env*)
                               (if env*
                                   (loop (set-rest work) ΔE)
                                   (let ((negterm (bind-fact ev env)))
@@ -389,25 +397,31 @@
                             (loop (set-add (set-rest work) (fire-state atoms-rest env* ptuples)) ΔE)
                             (loop (set-rest work) ΔE))))))
                 ((vector '*Recent* p)
-                  (let ((new-work (match-predicate p atoms-rest delta-tuples env ptuples)))
-                    (loop (set-union (set-rest work) new-work) ΔE)))
+                  (let ((matches (match-atom p delta-tuples env)))
+                    (let ((new-work (for/set ((m (in-set matches)))
+                                                        (fire-state atoms-rest (cdr m) (set-add ptuples (car m))))))
+                      (loop (set-union (set-rest work) new-work) ΔE))))
+                    ;(loop (set-union (set-rest work) new-work) ΔE)))
                 (_ 
-                  (let ((new-work (match-predicate av atoms-rest E env ptuples)))
-                    (loop (set-union (set-rest work) new-work) ΔE)))
+                  (let ((matches (match-atom av E env)))
+                    (let ((new-work (for/set ((m (in-set matches)))
+                                                        (fire-state atoms-rest (cdr m) (set-add ptuples (car m))))))
+                      (loop (set-union (set-rest work) new-work) ΔE))))
                   )))))))
 
-(define (match-predicate av remaining-preds E env ptuples)
-  (let e-loop ((E E) (work-acc (set)))
+
+(define (match-atom atom E env)
+  ;(printf "match-atom ~a ~a ~a\n" atom (set-count E) env)
+  (let e-loop ((E E) (matches (set)))
     (if (set-empty? E)
-        work-acc
+        matches
         (let ((ev (set-first E)))
-          (let ((env* (unify-atoms av ev env)))
+          (let ((env* (unify-atoms atom ev env)))
             ;(when m (printf "unify result: ~v\n" m))
             (if env*
-              (begin
-                ;(printf "adding: ptuples ~a + ev ~a\n" ptuples ev)
-                (e-loop (set-rest E) (set-add work-acc (fire-state remaining-preds env* (set-add ptuples ev)))))
-                (e-loop (set-rest E) work-acc)))))))
+;                (e-loop (set-rest E) (set-add work-acc (fire-state remaining-preds env* (set-add ptuples ev)))))
+                (e-loop (set-rest E) (set-add matches (cons ev env*))) ; tuple that matched + extended env
+                (e-loop (set-rest E) matches)))))))
 
 (define (sort-tuples tuples)
   (let ((tuple-list (set->list tuples)))

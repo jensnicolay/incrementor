@@ -57,13 +57,13 @@
           (check-lesseq-derivations* full-solver-results)
 
           (printf "===single delta ~a\n" delta)
-          (define single-delta-solver-results (map (lambda (delta-solver) (printf ">>>\n") (delta-solver (list delta))) delta-solvers))
+          (define single-delta-solver-results (map (lambda (delta-solver) (printf ">>>\n") (delta-solver 'apply-delta (list delta))) delta-solvers))
           (check-equal-tuples (car full-solver-results) (car single-delta-solver-results))
           (check-equal-tuples* single-delta-solver-results)
           (check-lesseq-derivations* single-delta-solver-results)
 
           (printf "===acc deltas ~a\n" (set-count deltas-acc*))
-          (define all-deltas-solver-results (map (lambda (delta-solver) (printf ">>>\n") (delta-solver deltas-acc*)) delta-solvers0))
+          (define all-deltas-solver-results (map (lambda (delta-solver) (printf ">>>\n") (delta-solver 'apply-delta deltas-acc*)) delta-solvers0))
           (check-equal-tuples (car full-solver-results) (car all-deltas-solver-results))
           (check-equal-tuples* all-deltas-solver-results)
           (check-lesseq-derivations* all-deltas-solver-results)
@@ -85,7 +85,7 @@
           (if (null? deltas)
               (reverse results)
               (let ((delta (car deltas)))
-                (let ((delta-solver-result (delta-solver (list delta))))
+                (let ((delta-solver-result (delta-solver 'apply-delta (list delta))))
                   (loop (cdr deltas) (solver-result-delta-solver delta-solver-result) (cons (data-point (timer) delta-solver-result) results)))))))))
 
   (define (num-tuples-cumulator l) ; makes num-derived-tuples cumulative
