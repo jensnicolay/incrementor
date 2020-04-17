@@ -211,15 +211,12 @@
       p)))
       ;((label-to-ast delta-solver) p))))
 
-(define num-derived-tuples 0)
-
 (define (evali e)
   
   (define (cont-with-result sr)
-    (match-let (((solver-result tuples num-derived-tuples* delta-solver) sr))
-      (printf "(~a tuples, ~a derived)\n" (set-count tuples) num-derived-tuples*)
+    (match-let (((solver-result tuples num-der-tuples* delta-solver) sr))
+      (printf "(~a tuples, ~a derived, ~a removed)\n" (set-count tuples) num-der-tuples* (delta-solver 'num-removed-tuples))
       ;(printf "RESULT: ~a\n" tuples)
-      (set! num-derived-tuples (+ num-derived-tuples num-derived-tuples*))
       (let ((Root (sequence->list (sequence-filter (lambda (a) (eq? 'Root (atom-name a))) (in-set tuples)))))
         (unless (= 1 (length Root))
           (error 'conc-eval "wrong number of roots: ~a" Root))
