@@ -2,9 +2,9 @@
 
 (require "ast.rkt")
 (require "datalog.rkt")
-(require "naive.rkt")
-(require "semi-naive.rkt")
 (require "incremental.rkt")
+
+(provide evali)
 
 (define (param->tuples p)
   (define i -1)
@@ -177,7 +177,10 @@
       (match tuple
         ((vector 'Lit (== l) _) tuple)
         ((vector 'Id (== l) _) tuple)
+        ((vector 'Lam (== l) _) tuple)
+        ((vector 'Param (== l) _ _ _) tuple)
         ((vector 'Let (== l) _ _ _) tuple)
+        ((vector 'Letrec (== l) _ _ _) tuple)
         ((vector 'If (== l) _ _ _) tuple)
         ((vector 'App (== l) _) tuple)
         (_ #f)))
@@ -189,15 +192,22 @@
 
   (define (arg-builder l)
     (let ((matches (delta-solver 'match-atom `#(Arg e ,l i))))
-        (map builder (map (lambda (a) (vector-ref a 1)) (sort (set-map matches car) < #:key (lambda (a) (vector-ref a 3)))))))
+      (map builder (map (lambda (a) (vector-ref a 1)) (sort (set-map matches car) < #:key (lambda (a) (vector-ref a 3)))))))
+
+  (define (param-builder l)
+    (let ((matches (delta-solver 'match-atom `#(Param e x ,l i))))
+      (map builder (map (lambda (a) (vector-ref a 1)) (sort (set-map matches car) < #:key (lambda (a) (vector-ref a 4)))))))
 
   (define (builder* tuple)
     (match tuple
       (`#(Lit ,l ,d) («lit» l d))
       (`#(Id ,l ,x) («id» l x))
+      (`#(Param ,l ,x ,e ,i) («id» l x))
+      (`#(Lam ,l ,e) («lam» l (param-builder l) (builder e)))
       (`#(Let ,l ,e₀ ,e₁ ,e₂) («let» l (builder e₀) (builder e₁) (builder e₂)))
+      (`#(Letrec ,l ,e₀ ,e₁ ,e₂) («letrec» l (builder e₀) (builder e₁) (builder e₂)))
       (`#(If ,l ,e₀ ,e₁ ,e₂) («if» l (builder e₀) (builder e₁) (builder e₂)))
-      (`#(App ,l ,e₀) («app» l (builder e₀) (arg-builder l)))
+      (`#(App ,l ,e) («app» l (builder e) (arg-builder l)))
       (_ (error "cannot handle ast tuple" tuple))))
 
   (define (builder l)
@@ -216,7 +226,6 @@
   (define (cont-with-result sr)
     (match-let (((solver-result tuples num-der-tuples* delta-solver) sr))
       (printf "(~a tuples, ~a derived, ~a removed)\n" (set-count tuples) num-der-tuples* (delta-solver 'num-removed-tuples))
-      ;(printf "RESULT: ~a\n" tuples)
       (let ((Root (sequence->list (sequence-filter (lambda (a) (eq? 'Root (atom-name a))) (in-set tuples)))))
         (unless (= 1 (length Root))
           (error 'conc-eval "wrong number of roots: ~a" Root))
@@ -225,6 +234,7 @@
               (let ((result (vector-ref (car Eval) 2)))
                 (lambda msg
                   (match msg
+                    (`(tuples) tuples)                    
                     (`(result) result)
                     (`(provenance) (delta-solver 'provenance))
                     (`(parent ,e)
@@ -247,31 +257,39 @@
               (error 'conc-eval "wrong Eval result: ~a\n~a" Eval (sort-tuples tuples)))))))
 
   (let ((E (ast->tuples e)))
-    (printf "tuples (~a): ~a\n" (set-count E) E)
+    ; (printf "tuples (~a): ~a\n" (set-count E) E)
     (cont-with-result (solve-incremental P E))))
 
-(define compile (make-compiler))
-(define let-binding (compile 2))
-(define p1 (compile
-  `(let ((x ,let-binding))
-    (let ((c (< x 0)))
-      (if c
-          'neg
-          'zeropos)))))
 
 
-(define ii (evali p1))
-(ast->string (ii 'program))
-(ii 'result)
+(module+ main
 
-(define let-binding‘ (compile -3))
-(define ii1 (ii 'replace let-binding let-binding‘))
-(ast->string (ii1 'program))
-(ii1 'result)
+  (define compile (make-compiler))
+  (define let-binding (compile 2))
+  (define p1 (compile
+    `(let ((x ,let-binding))
+      (letrec ((f
+        (lambda (x)
+          (let ((c (< x 2)))
+            (if c
+                1
+                (let ((n (- x 1)))
+                  (let ((m (f n)))
+                    (* x m))))))))
+        (f x)))))
 
-(define let-binding“ (compile 2))
-(define ii2 (ii1 'replace let-binding‘ let-binding“))
-(ast->string (ii2 'program))
-(ii2 'result)
+  (define ii (evali p1))
+  (ast->string (ii 'program))
+  (ii 'result)
 
+  (define let-binding‘ (compile 3))
+  (define ii1 (ii 'replace let-binding let-binding‘))
+  (ast->string (ii1 'program))
+  (ii1 'result)
+
+  (define let-binding“ (compile 2))
+  (define ii2 (ii1 'replace let-binding‘ let-binding“))
+  (ast->string (ii2 'program))
+  (ii2 'result)
+)
 

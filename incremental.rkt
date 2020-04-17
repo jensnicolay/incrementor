@@ -120,14 +120,14 @@
   (define intersection (set-intersect tuples-add* tuples-remove*)) ; TODO: we first remove, and then add: check whether/how this matters!
   (define tuples-add (set-subtract tuples-add* intersection))
   (define tuples-remove (set-subtract tuples-remove* intersection))
-  (printf "\nsolving incremental delta\nadd: ~a\nremove: ~a\n" tuples-add tuples-remove)
+  ;(printf "\nsolving incremental delta\nadd: ~a\nremove: ~a\n" tuples-add tuples-remove)
 
   ;; idb tuple removal due to removal of edb tuples with pos deps
   (define-values (provenance* tuples-idb-removed) (remove-tuples-from-system provenance tuples-remove))
-  (printf "edb/idb removed: ~a/~a\n" (set-count tuples-remove) (set-count tuples-idb-removed))
+  ;(printf "edb/idb removed: ~a/~a\n" (set-count tuples-remove) (set-count tuples-idb-removed))
   (define tuples-removed (set-union tuples-idb-removed tuples-remove))
   (define tuples* (set-union (set-subtract tuples tuples-removed) tuples-add)) 
-  (printf "starting stratum loop with ~a tuples\n" (set-count tuples*))
+  ;(printf "starting stratum loop with ~a tuples\n" (set-count tuples*))
   (define-values (tuples** provenance** num-der-tuples num-rem-tuples) (stratum-loop-delta strata tuples* provenance* tuples-add tuples-removed 0 (set-count tuples-idb-removed)))
   (solver-result tuples** num-der-tuples (make-delta-solver num-rem-tuples strata tuples** provenance**)))
 
