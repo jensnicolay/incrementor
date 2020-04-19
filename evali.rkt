@@ -226,35 +226,35 @@
   (define (cont-with-result sr)
     (match-let (((solver-result tuples num-der-tuples* delta-solver) sr))
       (printf "(~a tuples, ~a derived, ~a removed)\n" (set-count tuples) num-der-tuples* (delta-solver 'num-removed-tuples))
-      (let ((Root (sequence->list (sequence-filter (lambda (a) (eq? 'Root (atom-name a))) (in-set tuples)))))
-        (unless (= 1 (length Root))
-          (error 'conc-eval "wrong number of roots: ~a" Root))
-        (let ((Eval (sequence->list (sequence-filter (lambda (a) (eq? 'Eval (atom-name a))) (in-set tuples)))))
-          (if (= (length Eval) 1)
-              (let ((result (vector-ref (car Eval) 2)))
-                (lambda msg
-                  (match msg
-                    (`(tuples) tuples)                    
-                    (`(result) result)
-                    (`(provenance) (delta-solver 'provenance))
-                    (`(parent ,e)
-                      (tuple-to-ast (parentl e delta-solver) delta-solver))
-                    (`(program)
-                      ((tuple-to-ast delta-solver) (label-to-ast-tuple (vector-ref (car Root) 1) delta-solver)))
-                    (`(replace ,e₀ ,e₁)
-                        (let ((p (label-to-ast-tuple (parentl e₀ delta-solver) delta-solver)))
-                          (match p
-                            ((vector 'Let l x e₀ e-body)
-                              (let ((delta
-                                (append
-                                  (list
-                                    (remove-tuple (label-to-ast-tuple e₀ delta-solver))
-                                    (remove-tuple p)
-                                    (add-tuple `#(Let ,l ,x ,(ast-label e₁) ,e-body)))
-                                  (set-map (ast->tuples e₁) add-tuple))))
-                                (cont-with-result (delta-solver 'apply-delta delta)))))))
-                    (_ (error "evali: cannot understand" msg)))))
-              (error 'conc-eval "wrong Eval result: ~a\n~a" Eval (sort-tuples tuples)))))))
+      (lambda msg
+        (match msg
+          (`(tuples) tuples)                    
+          (`(result)
+            (let ((qresult (singleton-result (delta-solver 'match-atom `#(Eval _ d)))))
+              (hash-ref (cdr qresult) 'd)))
+          (`(sanity)
+            (singleton-result (delta-solver 'match-atom `#(Eval _ _)))
+            (singleton-result (delta-solver 'match-atom `#(Root _)))
+            'sane)
+          (`(provenance) (delta-solver 'provenance))
+          (`(parent ,e)
+            (tuple-to-ast (parentl e delta-solver) delta-solver))
+          (`(program)
+            (let ((root (hash-ref (cdr (singleton-result (delta-solver 'match-atom `#(Root e)))) 'e)))
+              ((tuple-to-ast delta-solver) (label-to-ast-tuple root delta-solver))))
+          (`(replace ,e₀ ,e₁)
+              (let ((p (label-to-ast-tuple (parentl e₀ delta-solver) delta-solver)))
+                (match p
+                  ((vector 'Let l x e₀ e-body)
+                    (let ((delta
+                      (append
+                        (list
+                          (remove-tuple (label-to-ast-tuple e₀ delta-solver))
+                          (remove-tuple p)
+                          (add-tuple `#(Let ,l ,x ,(ast-label e₁) ,e-body)))
+                        (set-map (ast->tuples e₁) add-tuple))))
+                      (cont-with-result (delta-solver 'apply-delta delta)))))))
+          (_ (error "evali: cannot understand" msg))))))
 
   (let ((E (ast->tuples e)))
     ; (printf "tuples (~a): ~a\n" (set-count E) E)
@@ -268,15 +268,7 @@
   (define let-binding (compile 2))
   (define p1 (compile
     `(let ((x ,let-binding))
-      (letrec ((f
-        (lambda (x)
-          (let ((c (< x 2)))
-            (if c
-                1
-                (let ((n (- x 1)))
-                  (let ((m (f n)))
-                    (* x m))))))))
-        (f x)))))
+      x)))
 
   (define ii (evali p1))
   (ast->string (ii 'program))

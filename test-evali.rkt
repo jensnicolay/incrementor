@@ -112,6 +112,22 @@
         (f x))))))
     (test-replace e e1 e2)))
 
+(let ((e1 (compile 4))
+      (e2 (compile 2)))
+  (let ((e (compile
+    `(letrec ((f
+      (lambda (x)
+        (let ((c (< x 2)))
+          (if c
+              1
+              (let ((n (- x 1)))
+                (let ((m (f n)))
+                  (* x m))))))))
+      (let ((u (f 4)))
+        (let ((y ,e1))
+          y))))))
+    (test-replace e e1 e2)))
+
 
 (printf "\n\nTESTS: ~a\n" tests)
 (printf "WARNINGS: incr slower ~a\n"
