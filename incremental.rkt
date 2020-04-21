@@ -120,7 +120,7 @@
   (define intersection (set-intersect tuples-add* tuples-remove*)) ; TODO: we first remove, and then add: check whether/how this matters!
   (define tuples-add (set-subtract tuples-add* intersection))
   (define tuples-remove (set-subtract tuples-remove* intersection))
-  ;(printf "\nsolving incremental delta\nadd: ~a\nremove: ~a\n" tuples-add tuples-remove)
+  (printf "\nsolving incremental delta\nadd: ~a\nremove: ~a\n" tuples-add tuples-remove)
 
   ;; idb tuple removal due to removal of edb tuples with pos deps
   (define-values (provenance* tuples-idb-removed) (remove-tuples-from-system provenance tuples-remove))

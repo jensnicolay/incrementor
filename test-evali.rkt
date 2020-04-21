@@ -25,14 +25,14 @@
 ; - in favor of delta: prov information computed which is not needed  
 ; - in favor of from-scratch: piggy-backs on ast rewriting from evali
 
-(define (test-replace e e1 e2)
+(define (test-change-literal-value e e-lit d)
   (set! tests (add1 tests))
   (define ii (evali e))
 
   (printf "p:  ~a\n" (ast->string (ii 'program)))
 
   (define incremental-timer (create-timer))
-  (define ii‘ (ii 'replace e1 e2))
+  (define ii‘ (ii 'change-literal-value e-lit d))
   (define incremental-time (incremental-timer))
 
   (printf "p‘:  ~a\n" (ast->string (ii‘ 'program)))
@@ -54,38 +54,37 @@
   (unless (<= incremental-time from-scratch-time)
     (report-incremental-slower-warning e)))
 
-(let ((e1 (compile #t))
-      (e2 (compile #f)))
+(let ((e-lit (compile #t))
+      (d #f))
   (let ((e (compile
-    `(let ((x ,e1))
+    `(let ((x ,e-lit))
       (if x
           'neg
           'zeropos)))))
-    (test-replace e e1 e2)))
+    (test-change-literal-value e e-lit d)))
 
-(let ((e1 (compile 2))
-      (e2 (compile 3)))
+(let ((e-lit (compile 2))
+      (d 3))
   (let ((e (compile
-    `(let ((x ,e1))
+    `(let ((x ,e-lit))
       (let ((f (lambda (y) (* y y))))
         (f x))))))
-    (test-replace e e1 e2)))
+    (test-change-literal-value e e-lit d)))
 
-(let ((e1 (compile 2))
-      (e2 (compile 3)))
+(let ((e-lit (compile 2))
+      (d 3))
   (let ((e (compile
-    `(let ((x ,e1))
+    `(let ((x ,e-lit))
       (let ((c (< x 0)))
         (if c
             'neg
             'zeropos))))))
-    (test-replace e e1 e2)))
+    (test-change-literal-value e e-lit d)))
 
-
-(let ((e1 (compile 2))
-      (e2 (compile 4)))
+(let ((e-lit (compile 2))
+      (d 4))
   (let ((e (compile
-    `(let ((x ,e1))
+    `(let ((x ,e-lit))
       (letrec ((f
         (lambda (x)
           (let ((c (< x 2)))
@@ -95,12 +94,12 @@
                   (let ((m (f n)))
                     (* x m))))))))
         (f x))))))
-    (test-replace e e1 e2)))
+    (test-change-literal-value e e-lit d)))
 
-(let ((e1 (compile 4))
-      (e2 (compile 2)))
+(let ((e-lit (compile 4))
+      (d 2))
   (let ((e (compile
-    `(let ((x ,e1))
+    `(let ((x ,e-lit))
       (letrec ((f
         (lambda (x)
           (let ((c (< x 2)))
@@ -110,10 +109,10 @@
                   (let ((m (f n)))
                     (* x m))))))))
         (f x))))))
-    (test-replace e e1 e2)))
+    (test-change-literal-value e e-lit d)))
 
-(let ((e1 (compile 4))
-      (e2 (compile 2)))
+(let ((e-lit (compile 4))
+      (d 2))
   (let ((e (compile
     `(letrec ((f
       (lambda (x)
@@ -124,9 +123,28 @@
                 (let ((m (f n)))
                   (* x m))))))))
       (let ((u (f 4)))
-        (let ((y ,e1))
+        (let ((y ,e-lit))
           y))))))
-    (test-replace e e1 e2)))
+    (test-change-literal-value e e-lit d)))
+
+(let ((e-lit (compile 4))
+      (d 2))
+  (let ((e (compile
+    `(letrec ((f
+      (lambda (x)
+        (let ((c (< x 2)))
+          (if c
+              1
+              (let ((n (- x 1)))
+                (let ((m (f n)))
+                  (* x m))))))))
+      (let ((y ,e-lit))
+        (let ((u (f 4)))
+          y))))))
+    (test-change-literal-value e e-lit d)))
+
+
+
 
 
 (printf "\n\nTESTS: ~a\n" tests)

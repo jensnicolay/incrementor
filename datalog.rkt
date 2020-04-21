@@ -328,7 +328,7 @@
 (struct fire-state (atoms env ptuples) #:transparent)
 
 (define (run-query atoms E delta-tuples)
-  ;(printf "fire rule ~v E ~v\n" rule E)
+  ;(printf "run query atoms ~a tuples ~a\n" atoms E) ; was `fire-rule`
   (let loop ((work (set (fire-state atoms (hash) (set))))
              (ΔE   (set)))
     (if (set-empty? work)

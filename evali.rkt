@@ -228,7 +228,8 @@
       (printf "(~a tuples, ~a derived, ~a removed)\n" (set-count tuples) num-der-tuples* (delta-solver 'num-removed-tuples))
       (lambda msg
         (match msg
-          (`(tuples) tuples)                    
+          (`(tuples) tuples)
+          (`(num-derived-tuples) num-der-tuples*)                 
           (`(result)
             (let ((qresult (singleton-result (delta-solver 'match-atom `#(Eval _ d)))))
               (hash-ref (cdr qresult) 'd)))
@@ -242,18 +243,14 @@
           (`(program)
             (let ((root (hash-ref (cdr (singleton-result (delta-solver 'match-atom `#(Root e)))) 'e)))
               ((tuple-to-ast delta-solver) (label-to-ast-tuple root delta-solver))))
-          (`(replace ,e₀ ,e₁)
-              (let ((p (label-to-ast-tuple (parentl e₀ delta-solver) delta-solver)))
-                (match p
-                  ((vector 'Let l x e₀ e-body)
-                    (let ((delta
-                      (append
-                        (list
-                          (remove-tuple (label-to-ast-tuple e₀ delta-solver))
-                          (remove-tuple p)
-                          (add-tuple `#(Let ,l ,x ,(ast-label e₁) ,e-body)))
-                        (set-map (ast->tuples e₁) add-tuple))))
-                      (cont-with-result (delta-solver 'apply-delta delta)))))))
+          (`(change-literal-value ,e-lit ,d)
+              (let ((l (ast-label e-lit)))
+                (let ((lit-tuple (label-to-ast-tuple l delta-solver)))
+                  (let ((delta                   
+                      (list
+                        (remove-tuple lit-tuple)
+                        (add-tuple `#(Lit ,l ,d)))))
+                    (cont-with-result (delta-solver 'apply-delta delta))))))
           (_ (error "evali: cannot understand" msg))))))
 
   (let ((E (ast->tuples e)))
@@ -274,13 +271,11 @@
   (ast->string (ii 'program))
   (ii 'result)
 
-  (define let-binding‘ (compile 3))
-  (define ii1 (ii 'replace let-binding let-binding‘))
+  (define ii1 (ii 'change-literal-value let-binding 3))
   (ast->string (ii1 'program))
   (ii1 'result)
 
-  (define let-binding“ (compile 2))
-  (define ii2 (ii1 'replace let-binding‘ let-binding“))
+  (define ii2 (ii1 'change-literal-value let-binding 2))
   (ast->string (ii2 'program))
   (ii2 'result)
 )
