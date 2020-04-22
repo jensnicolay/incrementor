@@ -27,3 +27,17 @@ trick with _ in neg: replace negated term with _ projected out
 sdds after Arg Param refactoring to remove special (%) predicates (solve-incremental)
 8788 ms 5154 tuples derived
 
+20200422
+wl-add
+(add-tuple '#(Link 'z 'a)); 432; 65; 10; 
+
+wl-neg-add-remove
+(remove-tuple '#(Link 'z 'a)); 1042; 380; 366; 
+
+sdds (now with Arg and Param relations iso. %select etc.)
+8651 ms 5154 tuples derived
+
+test-evali-correctness (tests tuple equality, while sdds only tests eval result)
+9515 ms 5154 tuples derived
+
+
