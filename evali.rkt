@@ -246,11 +246,9 @@
           (`(change-literal-value ,e-lit ,d)
               (let ((l (ast-label e-lit)))
                 (let ((lit-tuple (label-to-ast-tuple l delta-solver)))
-                  (let ((delta                   
-                      (list
-                        (remove-tuple lit-tuple)
-                        (add-tuple `#(Lit ,l ,d)))))
-                    (cont-with-result (delta-solver 'apply-delta delta))))))
+                  (let ((delta-add (list (add-tuple `#(Lit ,l ,d))))
+                        (delta-remove (list (remove-tuple lit-tuple))))
+                    (cont-with-result ((solver-result-delta-solver (delta-solver 'apply-delta delta-add)) 'apply-delta delta-remove))))))
           (_ (error "evali: cannot understand" msg))))))
 
   (let ((E (ast->tuples e)))

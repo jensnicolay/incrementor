@@ -41,7 +41,7 @@ test-evali-correctness (tests tuple equality, while sdds only tests eval result)
 9515 ms 5154 tuples derived
 
 20200423
-test-evali
+test-evali (delete-first incremental policy)
 TESTS: 7
 133      30       4.4x
 148      122      1.2x
@@ -50,3 +50,15 @@ TESTS: 7
 2477     2434     1x
 10763    1191     9x
 10938    10929    1x
+
+After splitting up delta in add (first) and delete (second). The inner working of `incremental-solver` still is delete-first.
+testevali
+TESTS: 7
+141      28       5x
+141      79       1.8x
+139      16       8.7x
+9162     10744    0.9x
+2337     6003     0.4x
+9927     819      12.1x
+9996     803      12.4x
+
