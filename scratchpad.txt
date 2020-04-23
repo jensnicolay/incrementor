@@ -40,4 +40,13 @@ sdds (now with Arg and Param relations iso. %select etc.)
 test-evali-correctness (tests tuple equality, while sdds only tests eval result)
 9515 ms 5154 tuples derived
 
-
+20200423
+test-evali
+TESTS: 7
+133      30       4.4x
+148      122      1.2x
+154      120      1.3x
+9733     9763     1x
+2477     2434     1x
+10763    1191     9x
+10938    10929    1x

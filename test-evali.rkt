@@ -13,6 +13,7 @@
 (define tests 0)
 (define errors 0)
 (define warning-incremental-slower 0)
+(define results '())
 
 (define (report-error e expected actual)
   (set! errors (add1 errors))
@@ -48,6 +49,8 @@
 
   (unless (equal? actual expected)
     (report-error e‘ expected actual))
+
+  (set! results (append results (list (hash 'from-scratch-time from-scratch-time 'incremental-time incremental-time))))
 
   (printf "from-scratch: ~a ms; incremental: ~a ms\n\n" from-scratch-time incremental-time)
 
@@ -144,10 +147,12 @@
     (test-change-literal-value e e-lit d)))
 
 
-
-
-
 (printf "\n\nTESTS: ~a\n" tests)
+(for ((result results))
+  (let* ((fst (hash-ref result 'from-scratch-time))
+          (it (hash-ref result 'incremental-time))
+          (x (/ fst it)))
+    (printf "~a ~a ~ax\n" (~a fst #:min-width 8) (~a it #:min-width 8) (~r x #:precision 1))))
 (printf "WARNINGS: incr slower ~a\n"
   warning-incremental-slower)
 (printf "ERRORS: ~a\n\n"
