@@ -151,7 +151,7 @@
       (`(num-removed-tuples) num-rem-tuples)
       (`(provenance) provenance)
       (`(match-atom ,atom)
-        (match-atom atom tuples (hash)))
+        (match-all-atoms atom tuples (hash)))
       (`(run-query ,atoms ...)
         (run-query atoms tuples (set)))
       (`(apply-delta ,deltas)
@@ -240,7 +240,7 @@
                       (atom-name (rule-head rule))))) ; this corresponds to Strata?
 
   (define (rewrite-rule r)
-    (match-let (((rule head body) r))
+    (match-let (((rule head body aggs) r))
       
     (define (rewrite-terms previous-terms future-terms rewrites)
       (if (null? future-terms)
@@ -252,7 +252,7 @@
               (_
                 (let ((name (atom-name term)))
                   (if (set-member? idb-preds name)
-                      (rewrite-terms (cons term previous-terms) (cdr future-terms) (set-add rewrites (rule head (append (reverse previous-terms) (list `#(*Recent* ,term)) (cdr future-terms)))))
+                      (rewrite-terms (cons term previous-terms) (cdr future-terms) (set-add rewrites (rule head (append (reverse previous-terms) (list `#(*Recent* ,term)) (cdr future-terms)) aggs)))
                       (rewrite-terms (cons term previous-terms) (cdr future-terms) rewrites))))))))
 
     ; (define (rewrite-term term previous-terms future-terms)
@@ -270,7 +270,7 @@
                       (atom-name (rule-head rule))))) ; this corresponds to Strata?
 
   (define (rewrite-rule r)
-    (match-let (((rule head body) r))
+    (match-let (((rule head body aggs) r))
       
     (define (rewrite-terms previous-terms future-terms rewrites-pos rewrites-neg)
       (if (null? future-terms)
@@ -282,7 +282,7 @@
                   ; (set-add rewrites-pos r) ; don't rewrite: use all tuples (in principle EDB0 should suffice: no new tuples can be generated that would change neg pred), but do add!
                   rewrites-pos
 ;                  (set-add rewrites-neg (rule head (append (reverse previous-terms) (list (¬ `#(*Recent* ,p))) (cdr future-terms)))))) TODO ;specific firing of rules with neg dep on removed edb tuple
-                  (set-add rewrites-neg (rule head (append (reverse previous-terms) (list (¬ p)) (cdr future-terms))))))
+                  (set-add rewrites-neg (rule head (append (reverse previous-terms) (list (¬ p)) (cdr future-terms)) aggs))))
               (_
                 (let ((name (atom-name term)))
                   (if (set-member? idb-preds name)
@@ -290,7 +290,7 @@
                         rewrites-pos 
                         rewrites-neg)
                       (rewrite-terms (cons term previous-terms) (cdr future-terms) 
-                        (set-add rewrites-pos (rule head (append (reverse previous-terms) (list `#(*Recent* ,term)) (cdr future-terms))))
+                        (set-add rewrites-pos (rule head (append (reverse previous-terms) (list `#(*Recent* ,term)) (cdr future-terms)) aggs))
                         rewrites-neg))))))))
 
     ; (define (rewrite-term-pos term previous-terms future-terms)

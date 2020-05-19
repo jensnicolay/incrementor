@@ -37,16 +37,21 @@
   (define (stratum-loop S E)
     ;(printf "\nsn stratum ~a/~a with ~a tuples\n" (- (set-count strata) (set-count S)) (set-count strata) (set-count E))
     (if (null? S)
-        (solver-result E num-derived-tuples (make-delta-solver))
+        (solver-result E num-derived-tuples (make-delta-solver E))
         (let ((E* (stratum-rule-loop (car S) E)))
           (stratum-loop (cdr S) E*))))
 
-  (define (make-delta-solver) ; TODO: investigate: addition-only delta can be computed more optimal by keeping all tuples?
+  (define (make-delta-solver tuples) ; TODO: investigate: addition-only delta can be computed more optimal by keeping all tuples?
     (lambda msg
       (match msg
         (`(apply-delta ,deltas)
           (let ((E (apply-deltas deltas E0)))
             (solve E)))
+      (`(match-atom ,atom)
+        (for/set ((tuple+bindings (in-set (match-all-atoms atom tuples (hash)))))
+          (car tuple+bindings)))
+      (`(run-query ,atoms ...)
+        (run-query atoms tuples (set)))
         (_ (error "incremental delta solver does not understand " msg)))))
 
   (stratum-loop strata E0))
@@ -58,7 +63,7 @@
                       (atom-name (rule-head rule))))) ; this corresponds to Strata?
 
   (define (rewrite-rule r)
-    (match-let (((rule head body) r))
+    (match-let (((rule head body aggs) r))
       
     (define (rewrite-terms previous-terms future-terms rewrites)
       (if (null? future-terms) 
@@ -70,7 +75,7 @@
               (_
                 (let ((name (atom-name term)))
                   (if (set-member? idb-preds name)
-                      (rewrite-terms (cons term previous-terms) (cdr future-terms) (set-add rewrites (rule head (append (reverse previous-terms) (list `#(*Recent* ,term)) (cdr future-terms)))))
+                      (rewrite-terms (cons term previous-terms) (cdr future-terms) (set-add rewrites (rule head (append (reverse previous-terms) (list `#(*Recent* ,term)) (cdr future-terms)) aggs)))
                       (rewrite-terms (cons term previous-terms) (cdr future-terms) rewrites))))))))
 
     ; (define (rewrite-term term previous-terms future-terms)

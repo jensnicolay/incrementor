@@ -3,7 +3,7 @@
 (provide
     atom? atom-name atom-arity atom-term ¬
     rule rule-head rule-body :-
-    match-atom run-query
+    match-all-atoms run-query
     stratify fire-rule
     solver-result solver-result-tuples solver-result-num-derived-tuples solver-result-delta-solver
     add-tuple remove-tuple apply-deltas
@@ -26,7 +26,7 @@
 (define ns (make-base-namespace))
 
 (struct ¬ (p) #:transparent)
-(struct rule (head body) #:transparent)
+(struct rule (head body aggregates) #:transparent)
 
 (struct solver-result (tuples num-derived-tuples delta-solver) #:transparent)
 
@@ -66,7 +66,7 @@
 ; A rule consists out of a head and a body, the latter again consisting out of an arbitrary number of atoms.
 
 (define (:- head . body)
-  (rule head body))
+  (rule head body #()))
 
 (define variable? symbol?)
   
@@ -254,53 +254,95 @@
 
 ; Evaluate x in a given environment of bindings.
 (define (evaluate x env)
-  ;(printf "evaluate-unquoted ~a\n" x)
-  (cond
-    ((symbol? x) (hash-ref env x (lambda () (eval x ns)))) ; Look up symbols in the given environment.
-    ((list? x)
-      (let ((operator (evaluate (car x) env))
-            (operands (map (lambda (operand) (evaluate operand env)) (cdr x))))
-        (apply operator operands)))
-    (else x)))
+  ; (printf "evaluate ~a\n" x)
+  (let ((RES
+      (cond
+        ((symbol? x) (hash-ref env x (lambda () (eval x ns)))) ; Look up symbols in the given environment.
+        ((list? x)
+        (let ((rator (car x))
+                (rands (cdr x)))
+          (cond
+            ((eq? rator 'quote)
+              (car rands))
+            ((eq? rator 'quasiquote)
+              (evaluate-quasi (car rands) env))
+            (else
+              (let ((proc (evaluate (car x) env))
+                    (args (map (lambda (operand) (evaluate operand env)) (cdr x))))
+                (apply proc args))))))
+        (else x))))
+    ; (printf "evaluate ~a => ~a\n" x RES)
+    RES))
+      
 
-; Tries to unify an atom to a given pattern (also an atom). Requires atom and pattern to be atoms. Returns an extended environment or #f if unification fails.
-(define (unify-atoms atom pattern env) ; TODO which is the pattern?
-  (if (and (eq? (atom-name atom) (atom-name pattern)) (= (atom-arity atom) (atom-arity pattern)))
-      (let unify-atom-arguments ((i 0) (env env)) ; Check unifiability for all argument terms of the atom.
-        (if (= i (atom-arity pattern))
-            env
-            (let* ((atom-arg-i (atom-term atom i))
-                   (patt-arg-i (atom-term pattern i))
-                   (env* (unify-terms atom-arg-i patt-arg-i env))) ; Try to unify the i-th argument of both atoms.
-              (if env*
-                  (unify-atom-arguments (add1 i) env*)
-                  #f)))) ; Unification of the i-th argument failed.
-      #f)) ; The pattern has a different name or arity.
+(define (evaluate-quasi x env)
+  ; (printf "evaluate-quasi ~a\n" x)
+  (let ((RES
+      (cond
+        ((list? x)
+          (let ((rator (car x))
+                  (rands (cdr x)))
+            (cond
+              ((eq? rator 'unquote)
+                (evaluate (car rands) env))
+              (else (error "evaluate-quasi app" x)))))
+        ((vector? x)
+          (for/vector ((term (in-vector x)))
+            (evaluate-quasi term env)))
+        (else x))))
+  ; (printf "evaluate-quasi ~a => ~a\n" x RES)
+  RES))
 
-; Tries to unify a term to a given pattern.
-; The pattern must be grounded but may contain wildcards (_).
-; Returns an extended environment or #f if unification fails.
-(define (unify-terms term pattern env) ; pattern must be grounded
-  ;(printf "unify ~a with ~a in ~a\n" term y env)
-  (let ((red (evaluate-unquoted term env))) ; Reduce the term if needed.
-    (cond
-      ((and (atom? red) (atom? pattern)) (unify-atoms red pattern env))
-      ((eq? red '_) env) ; wildcard: always unifies without side effect on env
-      ((variable? red) ; variable: current value must match the pattern. If the variable is unbound, this becomes bound.
-        (if (hash-has-key? env red)
-              (let ((eredisting-value (hash-ref env red)))
-                  (if (equal? eredisting-value pattern)
-                      env
-                      #f))
-              (hash-set env red pattern)))
-      ((and (pair? red) (eq? (car red) 'quote))
-        (if (eq? (cadr red) pattern)
-            env
-            #f))
-      ((equal? red pattern) env)
-      (else #f))))
+
+
+; atom = pred + terms*
+; returns an extended environment or #f if match fails
+(define (match-atom atom tuple env) ; TODO which is the pattern?
+  ; (printf "match-atom ~a ~a in ~a\n" atom tuple env)
+  (let ((RES
+      (if (and (eq? (atom-name atom) (atom-name tuple)) (= (atom-arity atom) (atom-arity tuple)))
+          (let match-atom-args ((i 0) (env env)) ; Check unifiability for all argument terms of the atom.
+            (if (= i (atom-arity tuple))
+                env
+                (let ((atom-arg-i (atom-term atom i))
+                      (tuple-arg-i (atom-term tuple i)))
+                  (let ((env* (match-term atom-arg-i tuple-arg-i env))) ; Try to unify the i-th argument of both atoms.
+                    (if env*
+                        (match-atom-args (add1 i) env*)
+                        #f))))) ; match of the i-th argument failed.
+          #f))) ; non-matching pred name or arity
+    ; (printf "match-atom ~a ~a in ~a => ~a\n" atom tuple env RES)
+    RES))
+
+; term = variable | constant
+; TODO CHECK: The pattern must be grounded but may contain wildcards (_).
+; returns an extended environment or #f if unification fails.
+(define (match-term term pattern env) ; pattern must be grounded
+  ; (printf "match-term ~a ~a in ~a\n" term pattern env)
+  (let ((RES 
+;      (let ((red (evaluate pattern env))) ; Reduce the term if needed.
+        (cond
+          ((and (atom? term) (atom? pattern)) (match-atom term pattern env))
+          ((eq? term '_) env) ; wildcard: always unifies without side effect on env
+          ((variable? term) ; variable: current value must match the pattern. If the variable is unbound, this becomes bound.
+            (if (hash-has-key? env term)
+                  (let ((existing-value (hash-ref env term)))
+                      (if (equal? existing-value pattern)
+                          env
+                          #f))
+                  (hash-set env term pattern)))
+          ((and (pair? term) (eq? (car pattern) 'quote))
+            (if (eq? (cadr term) pattern)
+                env
+                #f))
+          ((equal? term pattern) env)
+          (else #f))))
+    ; (printf "match-term ~a ~a in ~a => ~a\n" term pattern env RES)
+    RES))
+      
 
 (define (bind-fact hv env)
+  (printf "bind-fact ~a ~a\n" hv env)
   (let ((terms 
     (for/list ((i (in-range (atom-arity hv))))
       (let ((x (atom-term hv i)))
@@ -343,9 +385,9 @@
                 ((¬ av) ; duplicating special terms, other strategy: let special forms return results one by one for "fail-fast"
                   (match av
                     ((vector '= p q)
-                      (let* ((pp (evaluate-unquoted p env))
-                             (qq (evaluate-unquoted q env))
-                             (env* (unify-terms pp qq env)))
+                      (let* (
+                             (qq (evaluate q env))
+                             (env* (match-term p qq env)))
                         (if env* ; Test whether unification succeeded.
                             (loop (set-rest work) ΔE)
                             (loop (set-add (set-rest work) (fire-state atoms-rest env ptuples)) ΔE))))
@@ -358,7 +400,7 @@
                               (loop (set-add (set-rest work) (fire-state atoms-rest env (set-add ptuples ptuple))) ΔE))
                             )
                             (let* ((ev (set-first E))
-                                   (env* (unify-atoms av ev env)))
+                                   (env* (match-atom av ev env)))
                                 ;(printf "¬ unify result ~a ~a: ~v\n" av ev env*)
                               (if env*
                                   (loop (set-rest work) ΔE)
@@ -390,33 +432,33 @@
                     (let ((d-lst (evaluate l env)))
                       (loop (set-add (set-rest work) (fire-state atoms-rest (hash-set env index (index-of d-lst d-x)) ptuples)) ΔE)))) ; only finds first index
                 ((vector '= p q)
-                    (let ((pp (evaluate-unquoted p env)))
-                      (let ((qq (evaluate-unquoted q env)))
-                        (let ((env* (unify-terms pp qq env)))
+                    (let (
+                          (qq (evaluate q env)))
+                        (let ((env* (match-term p qq env)))
                         (if env*
                             (loop (set-add (set-rest work) (fire-state atoms-rest env* ptuples)) ΔE)
-                            (loop (set-rest work) ΔE))))))
+                            (loop (set-rest work) ΔE)))))
                 ((vector '*Recent* p)
-                  (let ((matches (match-atom p delta-tuples env)))
+                  (let ((matches (match-all-atoms p delta-tuples env)))
                     (let ((new-work (for/set ((m (in-set matches)))
                                                         (fire-state atoms-rest (cdr m) (set-add ptuples (car m))))))
                       (loop (set-union (set-rest work) new-work) ΔE))))
                     ;(loop (set-union (set-rest work) new-work) ΔE)))
                 (_ 
-                  (let ((matches (match-atom av E env)))
+                  (let ((matches (match-all-atoms av E env)))
                     (let ((new-work (for/set ((m (in-set matches)))
                                                         (fire-state atoms-rest (cdr m) (set-add ptuples (car m))))))
                       (loop (set-union (set-rest work) new-work) ΔE))))
                   )))))))
 
-
-(define (match-atom atom E env)
-  ;(printf "match-atom ~a ~a ~a\n" atom (set-count E) env)
+; returns set of (tuple . bindings)
+(define (match-all-atoms atom E env)
+  ; (printf "match-atom ~a ~a ~a\n" atom (set-count E) env)
   (let e-loop ((E E) (matches (set)))
     (if (set-empty? E)
         matches
         (let ((ev (set-first E)))
-          (let ((env* (unify-atoms atom ev env)))
+          (let ((env* (match-atom atom ev env)))
             ;(when m (printf "unify result: ~v\n" m))
             (if env*
 ;                (e-loop (set-rest E) (set-add work-acc (fire-state remaining-preds env* (set-add ptuples ev)))))
