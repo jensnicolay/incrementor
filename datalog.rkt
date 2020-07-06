@@ -74,8 +74,10 @@
 
   (define (term->aggregator term)
     (match term
-      ('#:sum (lambda xs (foldl + 0 (car xs))))
+      ('#:sum (lambda xs (apply + (car xs))))
       ('#:count (lambda xs (length (car xs))))
+      ('#:min (lambda xs (apply min (car xs))))
+      ('#:max (lambda xs (apply max (car xs))))
       (_ #f)
     ))
 

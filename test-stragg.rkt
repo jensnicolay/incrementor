@@ -38,4 +38,13 @@
       (set #(I a 1) #(I a 2) #(I b 33))
       (set #(R a 2) #(R b 1)))
 
+(test (set (:- #(R g #:min x) #(I g x)))
+      (set #(I a 1) #(I a 2) #(I b 33))
+      (set #(R a 1) #(R b 33)))
+
+(test (set (:- #(R g #:max x) #(I g x)))
+      (set #(I a 1) #(I a 2) #(I b 33))
+      (set #(R a 2) #(R b 33)))
+
+
 (printf "\n\nERRORS: ~a\n\n" errors)  

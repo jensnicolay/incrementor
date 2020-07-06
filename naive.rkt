@@ -58,7 +58,9 @@
 
 (module+ main
 
-  (define r1 (:- #(R g #:sum x) #(I g x)))
+  (define r1 (:- #(Cost x y c) #(Link x y c)))
+  (define r2 (:- #(Cost x y c) #(Shortest x z c1) #(Link z y c2) #(= c (+ c1 c2))))
+  (define r3 (:- #(Cost x y c) #(Shortest x z c1) #(Link z y c2) #(= c (+ c1 c2))))
 
   (define P (set r1))
   (define E (set #(I a 1) #(I a 2) #(I b 33)))
