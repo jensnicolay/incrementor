@@ -3,8 +3,8 @@
 
 (require "datalog.rkt")
 (require "naive.rkt")
-(require "semi-naive.rkt")
-(require "incremental.rkt")
+;(require "semi-naive.rkt")
+;(require "incremental.rkt")
 
 (define tests 0)
 (define errors 0)
@@ -18,17 +18,17 @@
   (define E (set #(I 123)))
   (define expected (set-union E I))
   (define Sn (solver-result-tuples (solve-naive P E)))
-  (define Ssn (solver-result-tuples (solve-semi-naive P E)))
-  (define Si (solver-result-tuples (solve-incremental P E)))
+  ;(define Ssn (solver-result-tuples (solve-semi-naive P E)))
+  ;(define Si (solver-result-tuples (solve-incremental P E)))
 
   (unless (equal? expected Sn)
     (report-error 'naive P E I Sn))
 
-  (unless (equal? expected Ssn)
-    (report-error 'semi-naive P E I Ssn))
+  ; (unless (equal? expected Ssn)
+  ;   (report-error 'semi-naive P E I Ssn))
 
-  (unless (equal? expected Si)
-    (report-error 'incremental P E I Si))
+  ; (unless (equal? expected Si)
+  ;   (report-error 'incremental P E I Si))
 )
 
 

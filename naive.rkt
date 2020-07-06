@@ -58,7 +58,7 @@
 
 (module+ main
 
-  (define r1 (:- #(R g #:count x) #(I g x)))
+  (define r1 (:- #(R g #:sum x) #(I g x)))
 
   (define P (set r1))
   (define E (set #(I a 1) #(I a 2) #(I b 33)))
