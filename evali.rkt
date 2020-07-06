@@ -24,7 +24,7 @@
 (define (ast->tuples e)
   (match e
     ((«id» l x) (set `#(Id ,l ,x)))
-    ((«lit» l d) (set`#(Lit ,l ,d)))
+    ((«lit» l d) (set `#(Lit ,l ,d)))
     ((«lam» l (list e-params ...) e-body)
       (set-add
         (foldl set-union (ast->tuples e-body) (map (param->tuples l) e-params)) 
@@ -152,7 +152,7 @@
   (#(Geval e e κ d) . :- . #(Letrec e _ _ e-body) #(Reachable e κ) #(Geval e-body e-body κ d))
   (#(Geval e e κ d) . :- . #(App e _) #(Step e κ e-body κ‘) #(Lam _ e-body) #(Geval e-body e-body κ‘ d))
   (#(Geval e e κ d) . :- . #(App e e-rator) #(Reachable e κ) 
-                            #(Geval e-rator e κ #(prim proc)) #(Arg e1 e 0) #(Geval e1 e κ d1) #(Arg e2 e 1) #(Geval e2 e κ d2) #(= d ,(proc d1 d2)))
+                            #(Geval e-rator e κ #(prim proc)) #(Arg e1 e 0) #(Geval e1 e κ d1) #(Arg e2 e 1) #(Geval e2 e κ d2) #(= d (proc d1 d2)))
   (#(Geval e e κ d) . :- . #(If e _ _ _) #(Step e κ e-thenelse κ) #(Geval e-thenelse e-thenelse κ d))
   
   ; Final/2 succeeds when its first argument is an expression that cannot be evaluated further, i.e., which cannot be stepped anymore.

@@ -58,17 +58,17 @@
 
 (module+ main
 
-  (define r1 (:- #(R y x #:sum) #(I x)))
+  (define r1 (:- #(R g #:count x) #(I g x)))
 
   (define P (set r1))
-  (define E (set #(I 123) #(I 456)))
+  (define E (set #(I a 1) #(I a 2) #(I b 33)))
 
   (define result (solve-naive P E))
   (define tuples (solver-result-tuples result))
   (printf "~a\n" (sort-tuples tuples))
-  (unless (equal? tuples (set #(I 123) #(I 456) 
-    #(R 579) 
-    ))
+  (unless (equal? tuples (set-union E (set
+    #(R a 3) #(R b 33) 
+    )))
     (error "wrong!"))
 )
 

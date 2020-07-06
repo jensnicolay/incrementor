@@ -4,7 +4,7 @@
 (require "naive.rkt")
 (require "semi-naive.rkt")
 (require "incremental.rkt")
-(require "test.rkt")
+(require "wl-test.rkt")
 
 (define r1 (:- #(F) (¬ #(T))))
 

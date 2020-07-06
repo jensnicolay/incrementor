@@ -49,8 +49,10 @@
       ((remove-tuple tuple) (set-remove E tuple)))))
 ;;;
 
-; An atom is structured as follows: Vect{ name | arg1 | arg2 | ... | argn }.
-; A 'tuple' is a ground atom, i.e., an atom with only constants as args
+(define variable? symbol?)
+
+(define (make-atom name terms)
+  `#(,name ,@terms))
 
 (define (atom-name a)
   (vector-ref a 0))
@@ -66,9 +68,39 @@
 ; A rule consists out of a head and a body, the latter again consisting out of an arbitrary number of atoms.
 
 (define (:- head . body)
-  (rule head body #()))
 
-(define variable? symbol?)
+  (define head-name (atom-name head))
+  (define head-terms (cdr (vector->list head)))
+
+  (define (term->aggregator term)
+    (match term
+      ('#:sum (lambda xs (foldl + 0 (car xs))))
+      ('#:count (lambda xs (length (car xs))))
+      (_ #f)
+    ))
+
+  (define (parse-regular-head head headr bodyr)
+    (if (null? head)
+        (rule (make-atom head-name headr) bodyr '())
+        (let ((term (car head)))
+          (let ((agg (term->aggregator term)))
+            ; (printf "term ~a agg ~a\n" term agg)
+            (if agg
+                (parse-agg-head (cdr head) (list agg) headr bodyr '())
+                (parse-regular-head (cdr head) (append headr (list term)) bodyr))))))
+
+  (define (parse-agg-head head curr headr bodyr aggr)
+    (if (null? head)
+        (rule (make-atom head-name headr) bodyr (append aggr (list curr)))
+        (let ((term (car head)))
+          (let ((agg (term->aggregator term)))
+            (if agg
+                (parse-agg-head (cdr head) (list agg) headr bodyr (append aggr (list curr)))
+                (parse-agg-head (cdr head) (append curr (list term)) headr bodyr aggr))))))
+
+  (let ((r (parse-regular-head head-terms '() body)))
+    ;(printf "rule: ~a" r)
+    r))
   
 (struct ledge (to label) #:transparent)
 
@@ -342,7 +374,7 @@
       
 
 (define (bind-fact hv env)
-  (printf "bind-fact ~a ~a\n" hv env)
+  ; (printf "bind-fact ~a ~a\n" hv env)
   (let ((terms 
     (for/list ((i (in-range (atom-arity hv))))
       (let ((x (atom-term hv i)))
@@ -354,18 +386,66 @@
           ((and (pair? x) (eq? (car x) 'quote))
             (cadr x))
           (else x))))))
-  (let ((new-fact (apply vector-immutable (cons (atom-name hv) terms))))
+  (let ((new-fact (make-atom (atom-name hv) terms)))
     new-fact)))
 
 (define (fire-rule rule E delta-tuples)
   ;(printf "fire rule ~v E ~v\n" rule E)
   (let ((qresult (run-query (rule-body rule) E delta-tuples)))
-    (let ((hv (rule-head rule)))
-      (for/set ((qr (in-set qresult)))
-        (let ((env (car qr))
-              (ptuples (cdr qr)))
-          (let ((new-fact (bind-fact hv env)))
-              (cons new-fact ptuples)))))))
+    (let ((aggs (rule-aggregates rule)))
+      (if (null? aggs)
+        (let ((hv (rule-head rule)))
+          (for/set ((qr (in-set qresult)))
+            (let ((env (car qr))
+                  (ptuples (cdr qr)))
+              (let ((new-fact (bind-fact hv env)))
+                  (cons new-fact ptuples)))))
+        (handle-aggs-rule rule qresult)))))
+
+(define (handle-aggs-rule rule qresult) ; qresult = (cons env ptuples)*
+
+  ; (printf "handle aggs ~a ~a\n" rule qresult)
+
+  (define (group-by-key terms env)
+    (map (lambda (var) (hash-ref env var (lambda () (error 'group-by-key "no value for ~a in ~a for ~a" var env head)))) terms))
+
+  (define head (rule-head rule))
+  (define head-list (vector->list head))
+  (define terms (cdr head-list))
+  (define aggs (rule-aggregates rule))
+  
+  (define grouped-values
+    (for/fold ((gb-result (hash))) ((qr (in-set qresult)))
+      (let ((env (car qr)))
+        (let ((gb-key (group-by-key terms env)))
+          ; (printf "gb-key ~a\n" gb-key)
+          (let ((gb-env (hash-ref gb-result gb-key (hash))))
+            (let ((gb-env*
+                (for/fold ((gb-env gb-env)) ((agg (in-list aggs)))
+                  (let ((agg-terms (cdr agg)))
+                    (for/fold ((gb-env gb-env)) ((agg-term (in-list agg-terms)))
+                      (let ((current-values (hash-ref gb-env agg-term '())))
+                        (hash-set gb-env agg-term (cons (hash-ref env agg-term) current-values))))))))
+              (hash-set gb-result gb-key gb-env*)))))))
+
+  ; (printf "grouped values: ~a\n" grouped-values)
+
+  (let ((RES
+  (for/fold ((fresh-tuples (set))) (((gb-key gb-env) (in-hash grouped-values)))
+    (for/fold ((fresh-tuples fresh-tuples)) ((agg (in-list aggs)))
+      (let ((agg-values
+          (for/list ((agg (in-list aggs)))
+            (let ((args (map (lambda (aggterm) (hash-ref gb-env aggterm)) (cdr agg))))
+              ; (printf "apply ~a ~a\n" (car agg) args)
+              (apply (car agg) args)))))
+        (let ((fresh-tuple (vector->immutable-vector (list->vector (cons (car head-list) (append gb-key agg-values))))))
+          (set-add fresh-tuples (cons fresh-tuple 'no-prov))))))
+  ))
+  ; (printf "fresh tuples: ~a\n" RES)
+  RES)
+)
+
+
 
 (struct fire-state (atoms env ptuples) #:transparent)
 
@@ -475,5 +555,5 @@
 
 
 (module+ main
-  123
+  (:- #(R x #:sum y) #(A b) #(C d e))
 )
