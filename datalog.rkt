@@ -443,7 +443,7 @@
         (let ((fresh-tuple (vector->immutable-vector (list->vector (cons (car head-list) (append gb-key agg-values))))))
           (set-add fresh-tuples (cons fresh-tuple 'no-prov))))))
   ))
-  ; (printf "fresh tuples: ~a\n" RES)
+  (printf "fresh tuples: ~a\n" RES)
   RES)
 )
 

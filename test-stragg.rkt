@@ -46,5 +46,10 @@
       (set #(I a 1) #(I a 2) #(I b 33))
       (set #(R a 2) #(R b 33)))
 
+; FIXME:
+; (test (set (:- #(R g #:min x #:max x #:sum x #:count) #(I g x)))
+;       (set #(I a 1) #(I a 2) #(I b 33))
+;       (set #(R a 1 2 3 2) #(R b 33 33 33 1)))
+
 
 (printf "\n\nERRORS: ~a\n\n" errors)  

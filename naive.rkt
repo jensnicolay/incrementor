@@ -58,18 +58,36 @@
 
 (module+ main
 
-  (define r1 (:- #(Cost x y c) #(Link x y c)))
-  (define r2 (:- #(Cost x y c) #(Shortest x z c1) #(Link z y c2) #(= c (+ c1 c2))))
-  (define r3 (:- #(Cost x y c) #(Shortest x z c1) #(Link z y c2) #(= c (+ c1 c2))))
+  ; ; does not terminate (as expected)
+  ; (define r1 (:- #(Cost x y c) #(Link x y c)))
+  ; (define r2 (:- #(Cost x z c) #(Cost x z c1) #(Link z y c2) #(= c (+ c1 c2))))
+  ; (define r3 (:- #(Shortest x y #:min c) #(Cost x y c)))  
+  
 
-  (define P (set r1))
-  (define E (set #(I a 1) #(I a 2) #(I b 33)))
+  ; ; typical(?) solution (when assuming that there is only one Shortest tuple produced)
+  ; (define r1 (:- #(Cost x y c) #(Link x y c)))
+  ; (define r2 (:- #(Cost x y c) #(Shortest x z c1) #(Link z y c2) #(= c (+ c1 c2))))
+  ; (define r3 (:- #(Shortest x y #:min c) #(Cost x y c)))
+
+  ; current semantics: first min is to tame the recursion (yielding [unpredictable] # of Cost thingies 
+  ; for the same x-y group), second is to have unique (shortest) tuple
+  ; drawback: is there ever a situation when you don't couple them together as shown (i.e., one min to imply both mon rec agg and unique result)
+  (define r1 (:- #(Cost x y c) #(Link x y c)))
+  (define r2 (:- #(Cost x y #:min c) #(Cost x z c1) #(Link z y c2) #(= c (+ c1 c2))))
+  (define r3 (:- #(Shortest x y #:min c) #(Cost x y c)))
+  
+  ; (define r1 (:- #(OwnsVia x x y n) )
+
+
+  (define P (set r1 r2 r3))
+  (define E (set #(Link a b 1) #(Link b c 2) #(Link a c 99) ;))
+      #(Link c a 200)))
 
   (define result (solve-naive P E))
   (define tuples (solver-result-tuples result))
   (printf "~a\n" (sort-tuples tuples))
   (unless (equal? tuples (set-union E (set
-    #(R a 3) #(R b 33) 
+    
     )))
     (error "wrong!"))
 )
